@@ -22,7 +22,8 @@
     "activeTab",
     "storage",
     "scripting",
-    "tabs"
+    "tabs",
+    "contextMenus"
   ],
   "options_ui": {
     "page": "options.html",

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="UTF-8">
     <title>OpenAI API Key</title>
     <style>
         body {
@@ -61,6 +62,14 @@
         <small>The final message asking for the review summary</small>
       </label>
       <textarea name="final_prompt" id="final_prompt" rows="3" style="width: 100%; padding: 8px; font-family: monospace; font-size: 13px; resize: vertical;" placeholder="All code changes have been provided..."></textarea>
+
+      <hr style="margin: 20px 0; border: none; border-top: 1px solid #ccc;" />
+
+      <label for="explain_prompt">
+        <strong>AI Explain Prompt:</strong><br/>
+        <small>Instructions for AI when explaining selected text. Available variables: {text}, {question}</small>
+      </label>
+      <textarea name="explain_prompt" id="explain_prompt" rows="8" style="width: 100%; padding: 8px; font-family: monospace; font-size: 13px; resize: vertical;" placeholder="Explain the following text..."></textarea>
       
       <div id="status" style="color: green;"></div>
       <button id="save" style="padding: 10px; cursor: pointer;">Save</button>

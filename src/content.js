@@ -811,8 +811,512 @@ Do not provide feedback yet. I will follow-up with a description of the change i
   }
 }
 
+class FloatingExplainWindow {
+  constructor() {
+    this.window = null;
+    this.isDragging = false;
+    this.isResizing = false;
+    this.dragStartX = 0;
+    this.dragStartY = 0;
+    this.windowStartX = 0;
+    this.windowStartY = 0;
+    this.resizeStartX = 0;
+    this.resizeStartY = 0;
+    this.resizeStartWidth = 0;
+    this.resizeStartHeight = 0;
+    this.isMinimized = false;
+    this.selectedText = '';
+    
+    this.createWindow();
+    this.attachEventListeners();
+  }
+
+  createWindow() {
+    const windowDiv = document.createElement('div');
+    windowDiv.id = 'codereview-explain-window';
+    windowDiv.className = 'codereview-floating-window codereview-explain-window';
+    
+    const initialWidth = Math.min(600, window.innerWidth * 0.9);
+    const initialHeight = Math.min(600, window.innerHeight * 0.9);
+    windowDiv.style.width = `${initialWidth}px`;
+    windowDiv.style.height = `${initialHeight}px`;
+    
+    windowDiv.innerHTML = `
+      <div class="codereview-window-header">
+        <div class="codereview-window-title">🤖 AI Объяснение</div>
+        <div class="codereview-window-controls">
+          <button class="codereview-control-btn codereview-center-btn" title="Center window">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+            </svg>
+          </button>
+          <button class="codereview-control-btn codereview-minimize-btn" title="Minimize">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
+            </svg>
+          </button>
+          <button class="codereview-control-btn codereview-close-btn" title="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="codereview-window-body">
+        <div class="codereview-explain-content">
+          <div class="codereview-explain-section">
+            <label class="codereview-explain-label">Выделенный текст:</label>
+            <div class="codereview-explain-selected-text" id="explain-selected-text"></div>
+          </div>
+          
+          <div class="codereview-explain-section">
+            <label class="codereview-explain-label">Ваш вопрос (необязательно):</label>
+            <textarea 
+              class="codereview-explain-input" 
+              id="explain-question-input" 
+              placeholder="Например: 'Что делает эта функция?' или 'Объясни простыми словами'"
+              rows="3"
+            ></textarea>
+          </div>
+          
+          <div class="codereview-explain-actions">
+            <button class="codereview-explain-btn" id="explain-submit-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+              </svg>
+              Объяснить
+            </button>
+          </div>
+          
+          <div class="codereview-explain-section" id="explain-result-section" style="display: none;">
+            <label class="codereview-explain-label">
+              <span id="explain-status-icon"></span>
+              Ответ AI:
+            </label>
+            <div class="codereview-explain-result" id="explain-result"></div>
+          </div>
+        </div>
+      </div>
+      <div class="codereview-resize-handle"></div>
+    `;
+    
+    document.body.appendChild(windowDiv);
+    this.window = windowDiv;
+  }
+
+  attachEventListeners() {
+    const header = this.window.querySelector('.codereview-window-header');
+    const closeBtn = this.window.querySelector('.codereview-close-btn');
+    const minimizeBtn = this.window.querySelector('.codereview-minimize-btn');
+    const centerBtn = this.window.querySelector('.codereview-center-btn');
+    const resizeHandle = this.window.querySelector('.codereview-resize-handle');
+    const submitBtn = this.window.querySelector('#explain-submit-btn');
+    const questionInput = this.window.querySelector('#explain-question-input');
+
+    // Drag functionality
+    header.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.codereview-window-controls')) return;
+      this.startDragging(e);
+    });
+
+    closeBtn.addEventListener('click', () => this.hide());
+    minimizeBtn.addEventListener('click', () => this.toggleMinimize());
+    centerBtn.addEventListener('click', () => {
+      this.centerWindow();
+      this.saveState();
+    });
+
+    // Resize functionality
+    resizeHandle.addEventListener('mousedown', (e) => {
+      this.startResizing(e);
+    });
+
+    // Global mouse listeners
+    document.addEventListener('mousemove', (e) => {
+      if (this.isDragging) {
+        this.drag(e);
+      } else if (this.isResizing) {
+        this.resize(e);
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (this.isDragging) {
+        this.stopDragging();
+      } else if (this.isResizing) {
+        this.stopResizing();
+      }
+    });
+
+    // Submit button
+    submitBtn.addEventListener('click', () => {
+      this.explainText();
+    });
+    
+    // Enter key in textarea (Ctrl+Enter to submit)
+    questionInput.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 'Enter') {
+        this.explainText();
+      }
+    });
+  }
+
+  startDragging(e) {
+    this.isDragging = true;
+    this.dragStartX = e.clientX;
+    this.dragStartY = e.clientY;
+    const rect = this.window.getBoundingClientRect();
+    this.windowStartX = rect.left;
+    this.windowStartY = rect.top;
+    this.window.style.cursor = 'grabbing';
+  }
+
+  drag(e) {
+    const deltaX = e.clientX - this.dragStartX;
+    const deltaY = e.clientY - this.dragStartY;
+    let newX = this.windowStartX + deltaX;
+    let newY = this.windowStartY + deltaY;
+    
+    const rect = this.window.getBoundingClientRect();
+    const minVisible = 100;
+    
+    const maxLeft = window.innerWidth - minVisible;
+    const minLeft = -rect.width + minVisible;
+    newX = Math.max(minLeft, Math.min(newX, maxLeft));
+    
+    const maxTop = window.innerHeight - 60;
+    const minTop = 0;
+    newY = Math.max(minTop, Math.min(newY, maxTop));
+    
+    this.window.style.left = `${newX}px`;
+    this.window.style.top = `${newY}px`;
+    this.window.style.right = 'auto';
+    this.window.style.bottom = 'auto';
+  }
+
+  stopDragging() {
+    this.isDragging = false;
+    this.window.style.cursor = '';
+    this.saveState();
+  }
+
+  startResizing(e) {
+    e.stopPropagation();
+    this.isResizing = true;
+    this.resizeStartX = e.clientX;
+    this.resizeStartY = e.clientY;
+    const rect = this.window.getBoundingClientRect();
+    this.resizeStartWidth = rect.width;
+    this.resizeStartHeight = rect.height;
+  }
+
+  resize(e) {
+    const deltaX = e.clientX - this.resizeStartX;
+    const deltaY = e.clientY - this.resizeStartY;
+    const newWidth = Math.max(400, this.resizeStartWidth + deltaX);
+    const newHeight = Math.max(300, this.resizeStartHeight + deltaY);
+    
+    this.window.style.width = `${newWidth}px`;
+    this.window.style.height = `${newHeight}px`;
+  }
+
+  stopResizing() {
+    this.isResizing = false;
+    this.saveState();
+  }
+
+  toggleMinimize() {
+    this.isMinimized = !this.isMinimized;
+    if (this.isMinimized) {
+      this.window.classList.add('codereview-minimized');
+    } else {
+      this.window.classList.remove('codereview-minimized');
+    }
+    this.saveState();
+  }
+
+  centerWindow() {
+    const width = Math.min(600, window.innerWidth - 40);
+    const height = Math.min(600, window.innerHeight - 40);
+    const left = (window.innerWidth - width) / 2;
+    const top = (window.innerHeight - height) / 2;
+    
+    this.window.style.width = `${width}px`;
+    this.window.style.height = `${height}px`;
+    this.window.style.left = `${left}px`;
+    this.window.style.top = `${top}px`;
+    this.window.style.right = 'auto';
+    this.window.style.bottom = 'auto';
+  }
+
+  saveState() {
+    const rect = this.window.getBoundingClientRect();
+    const state = {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      isMinimized: this.isMinimized
+    };
+    localStorage.setItem('codereview-explain-window-state', JSON.stringify(state));
+  }
+
+  loadState() {
+    const stateStr = localStorage.getItem('codereview-explain-window-state');
+    if (stateStr) {
+      try {
+        const state = JSON.parse(stateStr);
+        if (state.left !== undefined && state.top !== undefined) {
+          this.window.style.left = `${state.left}px`;
+          this.window.style.top = `${state.top}px`;
+          this.window.style.width = `${state.width}px`;
+          this.window.style.height = `${state.height}px`;
+          
+          if (state.isMinimized) {
+            this.isMinimized = true;
+            this.window.classList.add('codereview-minimized');
+          }
+        }
+      } catch (e) {
+        console.error('[CS] Failed to load explain window state:', e);
+      }
+    }
+  }
+
+  show(text) {
+    this.selectedText = text;
+    const selectedTextDiv = this.window.querySelector('#explain-selected-text');
+    selectedTextDiv.textContent = text;
+    
+    // Reset question and result
+    const questionInput = this.window.querySelector('#explain-question-input');
+    questionInput.value = '';
+    
+    const resultSection = this.window.querySelector('#explain-result-section');
+    resultSection.style.display = 'none';
+    
+    const resultDiv = this.window.querySelector('#explain-result');
+    resultDiv.innerHTML = '';
+    
+    // Center on first show or load state
+    if (!this.window.style.left || this.window.style.left === '0px') {
+      this.centerWindow();
+    } else {
+      this.loadState();
+    }
+    
+    this.window.style.display = 'flex';
+    
+    // Focus on question input
+    setTimeout(() => {
+      questionInput.focus();
+    }, 100);
+  }
+
+  hide() {
+    this.window.style.display = 'none';
+    this.saveState();
+  }
+
+  setStatus(icon) {
+    const statusIcon = this.window.querySelector('#explain-status-icon');
+    statusIcon.innerHTML = icon;
+  }
+
+  async getConfig() {
+    let options;
+    
+    try {
+      options = await new Promise((resolve) => {
+        chrome.storage.sync.get([
+          'openai_apikey', 
+          'api_base_url', 
+          'model',
+          'system_prompt',
+          'explain_prompt'
+        ], resolve);
+      });
+    } catch (e) {
+      options = await chrome.runtime.sendMessage({ action: 'getApiKey' });
+    }
+    
+    const isLocalhost = options.api_base_url?.includes('localhost') || 
+                       options.api_base_url?.includes('127.0.0.1');
+    
+    const apiKey = isLocalhost ? 'ollama' : options.openai_apikey;
+    const baseUrl = options.api_base_url || 'https://api.openai.com/v1';
+    const model = options.model || 'gpt-3.5-turbo';
+    const systemPrompt = options.system_prompt || 'You are a helpful AI assistant.';
+    const explainPrompt = options.explain_prompt || `Ты полезный AI ассистент. Твоя задача - объяснить выделенный текст понятно и на русском языке.
+
+Выделенный текст:
+{text}
+
+{question}
+
+Требования к ответу:
+- Объясняй понятно и структурировано
+- Используй примеры, где это уместно
+- Если это код, объясни что он делает и как работает
+- Если есть потенциальные проблемы или улучшения, укажи на них
+- Отвечай на русском языке
+- Будь кратким, но информативным`;
+    
+    if (!isLocalhost && !apiKey) {
+      throw new Error('UNAUTHORIZED');
+    }
+    
+    return { apiKey, baseUrl, model, systemPrompt, explainPrompt };
+  }
+
+  async callChatGPT(messages, callback, onDone) {
+    let config;
+    try {
+      config = await this.getConfig();
+    } catch (e) {
+      console.error('[CS] Failed to get config:', e);
+      callback('Пожалуйста, добавьте API ключ в настройках расширения');
+      onDone();
+      return;
+    }
+
+    const systemMessage = {
+      role: 'system',
+      content: 'Ты полезный AI ассистент. Объясняй понятно и на русском языке.'
+    };
+
+    const apiMessages = [systemMessage, ...messages];
+
+    const requestBody = {
+      model: config.model,
+      messages: apiMessages,
+      stream: true
+    };
+
+    const url = `${config.baseUrl}/chat/completions`;
+    console.log('[CS] Starting explain request to:', url);
+
+    const port = chrome.runtime.connect({ name: 'streaming-api' });
+    let fullResponse = '';
+    let isCompleted = false;
+    
+    const timeout = setTimeout(() => {
+      if (!isCompleted) {
+        console.error('[CS] Explain timeout');
+        port.disconnect();
+        callback(fullResponse || 'Ошибка: превышено время ожидания ответа.');
+        onDone();
+      }
+    }, 5 * 60 * 1000);
+    
+    port.postMessage({
+      action: 'streamRequest',
+      url,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'chunk') {
+        fullResponse += msg.content;
+        callback(fullResponse);
+      } else if (msg.type === 'done') {
+        isCompleted = true;
+        clearTimeout(timeout);
+        port.disconnect();
+        onDone();
+      } else if (msg.type === 'error') {
+        isCompleted = true;
+        clearTimeout(timeout);
+        port.disconnect();
+        callback(`Ошибка: ${msg.error}`);
+        onDone();
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (!isCompleted) {
+        clearTimeout(timeout);
+        if (fullResponse) {
+          callback(fullResponse + '\n\n[Предупреждение: соединение потеряно]');
+        } else {
+          callback('Ошибка: соединение потеряно.');
+        }
+        onDone();
+      }
+    });
+  }
+
+  async explainText() {
+    const questionInput = this.window.querySelector('#explain-question-input');
+    const resultSection = this.window.querySelector('#explain-result-section');
+    const resultDiv = this.window.querySelector('#explain-result');
+    const submitBtn = this.window.querySelector('#explain-submit-btn');
+    
+    const additionalQuestion = questionInput.value.trim();
+    
+    // Show result section
+    resultSection.style.display = 'block';
+    resultDiv.innerHTML = '';
+    
+    // Set loading state
+    this.setStatus(spinner);
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Думаю...';
+    
+    // Get config with custom prompt
+    let config;
+    try {
+      config = await this.getConfig();
+    } catch (e) {
+      console.error('[CS] Failed to get config for explain:', e);
+      resultDiv.innerHTML = 'Ошибка: не удалось загрузить конфигурацию. Проверьте настройки расширения.';
+      this.setStatus(xcircle);
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+        </svg>
+        Объяснить
+      `;
+      return;
+    }
+    
+    // Build prompt using custom template with variable substitution
+    let userPrompt = config.explainPrompt
+      .replace(/{text}/g, this.selectedText)
+      .replace(/{question}/g, additionalQuestion ? `Дополнительный вопрос: ${additionalQuestion}` : '');
+    
+    const messages = [
+      { role: 'user', content: userPrompt }
+    ];
+    
+    await this.callChatGPT(
+      messages,
+      (answer) => {
+        resultDiv.innerHTML = converter.makeHtml(answer);
+      },
+      () => {
+        this.setStatus(checkmark);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+          </svg>
+          Объяснить
+        `;
+      }
+    );
+  }
+}
+
 // Initialize floating window
 let floatingWindow = null;
+let explainWindow = null;
 
 console.log('[CS] Content script loaded on:', window.location.href);
 
@@ -824,6 +1328,12 @@ chrome.runtime.onMessage.addListener((request) => {
       floatingWindow = new FloatingReviewWindow();
     }
     floatingWindow.toggle();
+  } else if (request.action === 'explainText') {
+    console.log('[CS] Explain text requested, text length:', request.text?.length);
+    if (!explainWindow) {
+      explainWindow = new FloatingExplainWindow();
+    }
+    explainWindow.show(request.text);
   }
   return true;
 });

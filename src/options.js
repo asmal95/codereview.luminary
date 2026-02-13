@@ -17,6 +17,21 @@ Do not provide feedback yet. I will follow-up with a description of the change i
 
 const DEFAULT_FINAL_PROMPT = `All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided. Provide response in Russian language.`;
 
+const DEFAULT_EXPLAIN_PROMPT = `Ты полезный AI ассистент. Твоя задача - объяснить выделенный текст понятно и на русском языке.
+
+Выделенный текст:
+{text}
+
+{question}
+
+Требования к ответу:
+- Объясняй понятно и структурировано
+- Используй примеры, где это уместно
+- Если это код, объясни что он делает и как работает
+- Если есть потенциальные проблемы или улучшения, укажи на них
+- Отвечай на русском языке
+- Будь кратким, но информативным`;
+
 // Saves options to chrome.storage
 const saveOptions = () => {
     const openai_apikey = document.getElementById('openai_apikey').value;
@@ -25,6 +40,7 @@ const saveOptions = () => {
     const system_prompt = document.getElementById('system_prompt').value.trim();
     const review_prompt = document.getElementById('review_prompt').value.trim();
     const final_prompt = document.getElementById('final_prompt').value.trim();
+    const explain_prompt = document.getElementById('explain_prompt').value.trim();
   
     // Save to chrome.storage.sync
     chrome.storage.sync.set(
@@ -34,7 +50,8 @@ const saveOptions = () => {
         model: model || undefined,
         system_prompt: system_prompt || undefined,
         review_prompt: review_prompt || undefined,
-        final_prompt: final_prompt || undefined
+        final_prompt: final_prompt || undefined,
+        explain_prompt: explain_prompt || undefined
       },
       () => {
         // Update status to let user know options were saved.
@@ -57,7 +74,8 @@ const saveOptions = () => {
         model: '',
         system_prompt: DEFAULT_SYSTEM_PROMPT,
         review_prompt: DEFAULT_REVIEW_PROMPT,
-        final_prompt: DEFAULT_FINAL_PROMPT
+        final_prompt: DEFAULT_FINAL_PROMPT,
+        explain_prompt: DEFAULT_EXPLAIN_PROMPT
       },
       (items) => {
         document.getElementById('openai_apikey').value = items.openai_apikey;
@@ -66,6 +84,7 @@ const saveOptions = () => {
         document.getElementById('system_prompt').value = items.system_prompt || DEFAULT_SYSTEM_PROMPT;
         document.getElementById('review_prompt').value = items.review_prompt || DEFAULT_REVIEW_PROMPT;
         document.getElementById('final_prompt').value = items.final_prompt || DEFAULT_FINAL_PROMPT;
+        document.getElementById('explain_prompt').value = items.explain_prompt || DEFAULT_EXPLAIN_PROMPT;
       }
     );
   };
@@ -75,6 +94,7 @@ const saveOptions = () => {
     document.getElementById('system_prompt').value = DEFAULT_SYSTEM_PROMPT;
     document.getElementById('review_prompt').value = DEFAULT_REVIEW_PROMPT;
     document.getElementById('final_prompt').value = DEFAULT_FINAL_PROMPT;
+    document.getElementById('explain_prompt').value = DEFAULT_EXPLAIN_PROMPT;
     
     const status = document.getElementById('status');
     status.textContent = 'Prompts reset to default. Click Save to apply.';

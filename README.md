@@ -35,12 +35,50 @@ https://user-images.githubusercontent.com/4030927/207372123-46d7ee8c-bd3e-4272-8
 
 ## Usage
 
+### Code Review Mode
+
 - Navigate to a GitHub Pull Request or GitLab Merge Request that you want a review for.
 - Fill in your [OpenAI API token](https://platform.openai.com/account/api-keys) in the Settings of the Chrome Extension
 - Click the extension icon
 - You get code review comments from ChatGPT in the popup window
 
 **NB:** Running the review multiple times often produces different feedback, so if you are dealing with a larger PR, it might be a good idea to do that to get the most out of it.
+
+### 🆕 Explain Mode (NEW!)
+
+You can now ask AI to explain any text on any webpage:
+
+- **Select text** on any webpage (code, documentation, error messages, etc.)
+- **Right-click** and choose **"Объяснить с помощью AI"** ("Explain with AI")
+- A floating window appears with the selected text
+- **Optionally add your question** (e.g., "What does this function do?", "Explain in simple terms")
+- Click **"Объяснить"** ("Explain") or press **Ctrl+Enter**
+- Get real-time AI explanation with streaming response
+
+**Examples:**
+- Explain complex code snippets
+- Understand error messages
+- Get simple explanations of technical docs
+- Analyze and get suggestions for improvements
+
+📖 See [EXPLAIN_FEATURE.md](EXPLAIN_FEATURE.md) for detailed documentation.
+
+### 🎨 Custom Prompts (NEW!)
+
+You can now customize AI prompts for both code review and text explanation:
+
+- **System Prompt** - Define AI's role and behavior
+- **Review Prompts** - Customize code review instructions
+- **Explain Prompt** - Control how AI explains selected text
+
+**How to customize:**
+1. Right-click extension icon → **Options**
+2. Scroll to prompt sections
+3. Edit prompts with your preferences
+4. Use variables: `{title}`, `{text}`, `{question}`
+5. Click **Save**
+
+📚 See [CUSTOM_PROMPTS.md](CUSTOM_PROMPTS.md) for detailed guide and examples.
 
 ## FAQ
 
@@ -108,6 +146,7 @@ This is a list of permissions the extension uses with the respective reason.
 - `activeTab` is used to get the URL or the active tab. This is needed to fetch the get the Pull Request details
 - `storage` is used to cache the responses from OpenAI
 - `scripting` is used to fetch html content from the Merge Request / Pull Request
+- `contextMenus` is used to add "Explain with AI" option to the right-click menu
 
 ## Credits
 

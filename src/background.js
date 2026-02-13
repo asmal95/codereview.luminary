@@ -5,6 +5,50 @@ console.log('[BG] Background script loaded');
 // Keep track of tabs where content script is injected
 const injectedTabs = new Set();
 
+// Create context menu for text selection
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'explainText',
+    title: 'Объяснить с помощью AI',
+    contexts: ['selection']
+  });
+  console.log('[BG] Context menu created');
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'explainText' && info.selectionText) {
+    console.log('[BG] Context menu clicked, selected text length:', info.selectionText.length);
+    
+    try {
+      await chrome.tabs.sendMessage(tab.id, { 
+        action: 'explainText', 
+        text: info.selectionText 
+      });
+      console.log('[BG] Message sent to content script');
+    } catch (error) {
+      console.log('[BG] Injecting content script for explain feature...');
+      
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content.js']
+        });
+        
+        injectedTabs.add(tab.id);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await chrome.tabs.sendMessage(tab.id, { 
+          action: 'explainText', 
+          text: info.selectionText 
+        });
+        console.log('[BG] Content script injected and message sent');
+      } catch (injectError) {
+        console.error('[BG] Failed to inject for explain:', injectError);
+      }
+    }
+  }
+});
+
 // Handle clicks on the extension icon
 chrome.action.onClicked.addListener(async (tab) => {
   console.log('[BG] Extension icon clicked, tab:', tab.id);
@@ -44,7 +88,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       'model',
       'system_prompt',
       'review_prompt',
-      'final_prompt'
+      'final_prompt',
+      'explain_prompt'
     ], (items) => {
       sendResponse(items);
     });
