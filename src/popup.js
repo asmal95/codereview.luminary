@@ -2,7 +2,7 @@
 
 import './styles.css';
 import { parse } from 'node-html-parser';
-import { ChatGPTAPI } from 'chatgpt';
+import OpenAI from 'openai';
 
 var parsediff = require('parse-diff');
 
@@ -43,62 +43,103 @@ function inProgress(ongoing, failed = false, rerun = true) {
 
 async function getApiKey() {
   let options = await new Promise((resolve) => {
-    chrome.storage.sync.get('openai_apikey', resolve);
+    chrome.storage.sync.get(['openai_apikey', 'api_base_url', 'model'], resolve);
   });
-  console.log(options);
   if (!options || !options['openai_apikey']) {
     throw new Error("UNAUTHORIZED");
   }
-  return options['openai_apikey'];
+  return {
+    apiKey: options['openai_apikey'],
+    apiBaseUrl: options['api_base_url'] || undefined, // undefined = default to OpenAI
+    model: options['model'] || undefined // undefined = use library default
+  };
 }
 
 async function callChatGPT(messages, callback, onDone) {
-  let apiKey;
+  let config;
   try {
-    apiKey = await getApiKey();
+    config = await getApiKey();
   } catch (e) {
     callback('Please add your Open AI API key to the settings of this Chrome Extension.');
     onDone();
     return;
   }
 
-  const api = new ChatGPTAPI({
-    apiKey: apiKey,
-    systemMessage: `You are a programming code change reviewer, provide feedback on the code changes given. Do not introduce yourselves.`
-  })
-
-  let res
-  let iterations = messages.length;
-  for (const message of messages) {
-    iterations--;
-    try {
-      // Last prompt
-      var options = {};
-      // If we have no iterations left, it means its the last of our prompt messages.
-      if (iterations == 0) {
-        options = {
-          onProgress: (partialResponse) => callback(partialResponse.text),
-        }
-      }
-      // In progress
-      else {
-        options = {
-          onProgress: () => callback("Processing your code changes. Number of prompts left to send: " + iterations + ". Stay tuned..."),
-        }
-      }
-
-      if (res) {
-        options.parentMessageId = res.id
-      }
-      res = await api.sendMessage(message, options)
-    } catch (e){
-      callback(String(e));
-      onDone();
-      return;
-    }
+  const clientOptions = {
+    apiKey: config.apiKey,
+    dangerouslyAllowBrowser: true
   };
 
-  onDone();
+  if (config.apiBaseUrl) {
+    clientOptions.baseURL = config.apiBaseUrl;
+  }
+
+  const client = new OpenAI(clientOptions);
+
+  // Convert messages to OpenAI format
+  // First message is system message, rest are user messages
+  const systemMessage = {
+    role: 'system',
+    content: `You are a programming code change reviewer, provide feedback on the code changes given. Do not introduce yourselves.`
+  };
+
+  const openaiMessages = [systemMessage];
+  
+  // Add all user messages
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    openaiMessages.push({
+      role: 'user',
+      content: message
+    });
+    
+    // Show progress for intermediate messages
+    if (i < messages.length - 1) {
+      callback("Processing your code changes. Number of prompts left to send: " + (messages.length - i - 1) + ". Stay tuned...");
+    }
+  }
+
+  const requestOptions = {
+    model: config.model || 'gpt-3.5-turbo',
+    messages: openaiMessages,
+    stream: true
+  };
+
+  try {
+    const stream = await client.chat.completions.create(requestOptions);
+    
+    let fullResponse = '';
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        fullResponse += content;
+        callback(fullResponse);
+      }
+    }
+    
+    onDone();
+  } catch (e) {
+    console.error('OpenAI API Error:', e.message, e.status ? `(HTTP ${e.status})` : '');
+    
+    let errorMessage = `Error: ${e.message || 'Connection error.'}`;
+    if (e.status) {
+      errorMessage += ` (HTTP ${e.status})`;
+    }
+    
+    errorMessage += '\n\nTroubleshooting:\n';
+    errorMessage += '- Check browser console (F12) for more details\n';
+    errorMessage += '- Verify your API key and settings\n';
+    if (e.status === 401) {
+      errorMessage += '- Check if your API key is correct\n';
+    } else if (e.status === 403) {
+      errorMessage += '- Server rejected the request. Check CORS settings if using localhost\n';
+    } else if (e.status === 429) {
+      errorMessage += '- Rate limit exceeded. Wait a moment and try again\n';
+    }
+    
+    callback(errorMessage);
+    onDone();
+  }
 }
 
 const showdown = require('showdown');
@@ -190,7 +231,7 @@ async function reviewPR(diffPath, context, title) {
     promptArray.push(part);
   });
 
-  promptArray.push("All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided");
+  promptArray.push("All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided. Provide response in Russian language.");
 
   // Send our prompts to ChatGPT.
   callChatGPT(
@@ -240,10 +281,13 @@ async function run() {
     // Fetch it by running a querySelector script specific to GitHub on the active tab
     const contextExternalResult = (await chrome.scripting.executeScript({
       target:{tabId: tab.id, allFrames: true}, 
-      func: () => { return document.querySelector('.markdown-body').textContent }
+      func: () => { 
+        const element = document.querySelector('.markdown-body');
+        return element ? element.textContent : null;
+      }
     }))[0];
     
-    if ("result" in contextExternalResult) {
+    if ("result" in contextExternalResult && contextExternalResult.result) {
       context = contextExternalResult.result;
     }
   }
@@ -254,10 +298,69 @@ async function run() {
     // Fetch it by running a querySelector script specific to GitLab on the active tab
     const contextExternalResult = (await chrome.scripting.executeScript({
       target:{tabId: tab.id, allFrames: true}, 
-      func: () => { return document.querySelector('.description textarea').getAttribute('data-value') }
+      func: () => {
+        const element = document.querySelector('.description textarea');
+        return element ? element.getAttribute('data-value') : null;
+      }
+      /*func: () => { 
+        // GitLab MR description extraction
+        // Based on testing: .md and .note-text often contain commit info, not description
+        
+        // Strategy 1: Look for description in merge request details section
+        const mrDetails = document.querySelector('.merge-request-details');
+        if (mrDetails) {
+          // Try to find description element within MR details
+          const descElements = mrDetails.querySelectorAll('.md, .note-text, .description');
+          for (const el of descElements) {
+            const text = el.textContent?.trim() || '';
+            // Filter out commit-related content
+            if (text && 
+                text.length > 30 && 
+                !text.match(/^added \d+ commit/i) && 
+                !text.match(/^Compare with/i) &&
+                !text.includes('Compare with previous version')) {
+              return text;
+            }
+          }
+        }
+        
+        // Strategy 2: Try detail-page-description section
+        const detailDesc = document.querySelector('.detail-page-description');
+        if (detailDesc) {
+          const text = detailDesc.textContent?.trim() || '';
+          if (text && text.length > 30 && !text.match(/^added \d+ commit/i)) {
+            return text;
+          }
+        }
+        
+        // Strategy 3: Find all .md elements and filter out commit info
+        const allMd = Array.from(document.querySelectorAll('.md'));
+        for (const md of allMd) {
+          const text = md.textContent?.trim() || '';
+          // Skip if it looks like commit info or is too short
+          if (text && 
+              text.length > 30 &&
+              !text.match(/^added \d+ commit/i) &&
+              !text.match(/^Compare with/i) &&
+              !md.closest('.commit-message, .commit-info')) {
+            return text;
+          }
+        }
+        
+        // Strategy 4: Try textarea (if page was in edit mode)
+        const textarea = document.querySelector('textarea.js-note-text, textarea[data-value]');
+        if (textarea) {
+          const value = textarea.value || textarea.getAttribute('data-value') || '';
+          if (value.trim().length > 30) {
+            return value.trim();
+          }
+        }
+        
+        return null;
+      }*/
     }))[0];
 
-    if ("result" in contextExternalResult) {
+    if ("result" in contextExternalResult && contextExternalResult.result) {
       context = contextExternalResult.result;
     }
   }

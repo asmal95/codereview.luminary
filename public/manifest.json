@@ -3,7 +3,7 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   },
-  "name": "codereview.gpt",
+  "name": "codereview.luminary",
   "version": "0.3.0",
   "description": "Reviews your Pull Requests using ChatGPT so that you can pretend to work",
   "icons": {
@@ -13,7 +13,7 @@
     "128": "icons/icon_128.png"
   },
   "action": {
-    "default_title": "codereview.gpt",
+    "default_title": "codereview.luminary",
     "default_popup": "popup.html"
   },
   "permissions": [
@@ -27,9 +27,13 @@
   },
   "host_permissions": [
     "https://*.githubusercontent.com/",
-    "https://gitlab.com/"
+    "https://gitlab.com/",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "optional_host_permissions": [
-    "https://*/*"
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ]
 }
