@@ -6,14 +6,16 @@
         body {
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
-            overflow: hidden;
+            overflow: auto;
+            min-height: 100vh;
+            padding: 20px 0;
+            margin: 0;
         }
     </style>
   </head>
   <body>
-    <div style="display: flex; flex-direction: column; gap: 10px; padding: 20px; max-width: 500px;">
+    <div style="display: flex; flex-direction: column; gap: 15px; padding: 20px; max-width: 700px; width: 100%; box-sizing: border-box;">
       <label for="openai_apikey">
         <strong>API Key:</strong><br/>
         <small>Your OpenAI API key or compatible service API key</small>
@@ -39,9 +41,30 @@
         <option value="gpt-3.5-turbo">gpt-3.5-turbo (Default, cheaper)</option>
         <option value="gpt-3.5-turbo-16k">gpt-3.5-turbo-16k</option>
       </datalist>
+
+      <hr style="margin: 20px 0; border: none; border-top: 1px solid #ccc;" />
+
+      <label for="system_prompt">
+        <strong>System Prompt:</strong><br/>
+        <small>The system message that defines the AI's role and behavior</small>
+      </label>
+      <textarea name="system_prompt" id="system_prompt" rows="2" style="width: 100%; padding: 8px; font-family: monospace; font-size: 13px; resize: vertical;" placeholder="You are a programming code change reviewer..."></textarea>
+
+      <label for="review_prompt">
+        <strong>Review Instructions Prompt:</strong><br/>
+        <small>Main instructions for the code review. Available variables: {title}</small>
+      </label>
+      <textarea name="review_prompt" id="review_prompt" rows="10" style="width: 100%; padding: 8px; font-family: monospace; font-size: 13px; resize: vertical;" placeholder="The change has the following title: {title}..."></textarea>
+
+      <label for="final_prompt">
+        <strong>Final Request Prompt:</strong><br/>
+        <small>The final message asking for the review summary</small>
+      </label>
+      <textarea name="final_prompt" id="final_prompt" rows="3" style="width: 100%; padding: 8px; font-family: monospace; font-size: 13px; resize: vertical;" placeholder="All code changes have been provided..."></textarea>
       
       <div id="status" style="color: green;"></div>
       <button id="save" style="padding: 10px; cursor: pointer;">Save</button>
+      <button id="reset" style="padding: 10px; cursor: pointer; margin-left: 10px;">Reset Prompts to Default</button>
     </div>
     <script src="options.js"></script>
   </body>

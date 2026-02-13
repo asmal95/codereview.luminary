@@ -13,13 +13,16 @@
     "128": "icons/icon_128.png"
   },
   "action": {
-    "default_title": "codereview.luminary",
-    "default_popup": "popup.html"
+    "default_title": "codereview.luminary"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "options_ui": {
     "page": "options.html",
