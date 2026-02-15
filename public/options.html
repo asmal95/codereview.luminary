@@ -43,6 +43,12 @@
         <option value="gpt-3.5-turbo-16k">gpt-3.5-turbo-16k</option>
       </datalist>
 
+      <label for="api_timeout">
+        <strong>API Timeout (seconds, Optional):</strong><br/>
+        <small>Maximum time to wait for API response. Default: 300 seconds (5 minutes)</small>
+      </label>
+      <input type="number" name="api_timeout" id="api_timeout" placeholder="300" min="30" max="600" style="width: 100%; padding: 5px;" />
+
       <hr style="margin: 20px 0; border: none; border-top: 1px solid #ccc;" />
 
       <label for="system_prompt">

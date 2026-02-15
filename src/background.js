@@ -86,6 +86,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       'openai_apikey', 
       'api_base_url', 
       'model',
+      'api_timeout',
       'system_prompt',
       'review_prompt',
       'final_prompt',

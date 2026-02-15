@@ -37,6 +37,7 @@ const saveOptions = () => {
     const openai_apikey = document.getElementById('openai_apikey').value;
     const api_base_url = document.getElementById('api_base_url').value.trim();
     const model = document.getElementById('model').value.trim();
+    const api_timeout = document.getElementById('api_timeout').value.trim();
     const system_prompt = document.getElementById('system_prompt').value.trim();
     const review_prompt = document.getElementById('review_prompt').value.trim();
     const final_prompt = document.getElementById('final_prompt').value.trim();
@@ -48,6 +49,7 @@ const saveOptions = () => {
         openai_apikey: openai_apikey,
         api_base_url: api_base_url || undefined,
         model: model || undefined,
+        api_timeout: api_timeout ? parseInt(api_timeout) : undefined,
         system_prompt: system_prompt || undefined,
         review_prompt: review_prompt || undefined,
         final_prompt: final_prompt || undefined,
@@ -72,6 +74,7 @@ const saveOptions = () => {
         openai_apikey: '', 
         api_base_url: '', 
         model: '',
+        api_timeout: 300,
         system_prompt: DEFAULT_SYSTEM_PROMPT,
         review_prompt: DEFAULT_REVIEW_PROMPT,
         final_prompt: DEFAULT_FINAL_PROMPT,
@@ -81,6 +84,7 @@ const saveOptions = () => {
         document.getElementById('openai_apikey').value = items.openai_apikey;
         document.getElementById('api_base_url').value = items.api_base_url || '';
         document.getElementById('model').value = items.model || '';
+        document.getElementById('api_timeout').value = items.api_timeout || 300;
         document.getElementById('system_prompt').value = items.system_prompt || DEFAULT_SYSTEM_PROMPT;
         document.getElementById('review_prompt').value = items.review_prompt || DEFAULT_REVIEW_PROMPT;
         document.getElementById('final_prompt').value = items.final_prompt || DEFAULT_FINAL_PROMPT;
