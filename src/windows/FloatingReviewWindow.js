@@ -11,6 +11,7 @@ const converter = new showdown.Converter();
 export class FloatingReviewWindow extends BaseFloatingWindow {
   constructor() {
     super('codereview-floating-window', '');
+    this.isReviewing = false; // Prevent duplicate reviews
     this.createWindow(768, 768);
     this.loadState();
   }
@@ -41,9 +42,6 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
         <div class="codereview-content">
           <div class="codereview-header-info">
             <div class="codereview-header-row">
-              <div class="codereview-title-row">
-                <span id="codeball-link" class="codereview-link" style="display: none;">(by <a href="https://javazen.ru" target="_blank">javazen.ru</a>)</span>
-              </div>
               <div id="rerun-btn" class="codereview-rerun-btn" style="display: none;">
                 run again
               </div>
@@ -105,17 +103,14 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
   setStatus(ongoing, failed = false, rerun = true) {
     const statusIcon = this.window.querySelector('#status-icon');
     const rerunBtn = this.window.querySelector('#rerun-btn');
-    const codeballLink = this.window.querySelector('#codeball-link');
     
     if (ongoing) {
       statusIcon.innerHTML = spinner;
       rerunBtn.style.display = 'none';
-      codeballLink.style.display = 'none';
     } else {
       statusIcon.innerHTML = failed ? xcircle : checkmark;
       if (rerun) {
         rerunBtn.style.display = 'block';
-        codeballLink.style.display = 'inline';
       }
     }
   }
@@ -264,15 +259,25 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
   }
 
   async runReview() {
-    const prUrl = this.window.querySelector('#pr-url');
-    prUrl.textContent = window.location.href;
+    // Prevent duplicate reviews
+    if (this.isReviewing) {
+      console.log('[FloatingReview] Review already in progress, ignoring duplicate call');
+      return;
+    }
+    
+    console.log('[FloatingReview] Starting review...');
+    this.isReviewing = true;
+    
+    try {
+      const prUrl = this.window.querySelector('#pr-url');
+      prUrl.textContent = window.location.href;
 
-    let diffPath;
-    let provider = '';
-    let error = null;
-    const tokens = window.location.href.split('/');
-    let context = '';
-    const title = document.title;
+      let diffPath;
+      let provider = '';
+      let error = null;
+      const tokens = window.location.href.split('/');
+      let context = '';
+      const title = document.title;
 
     // Detect provider
     const isGitLabMeta = document.querySelectorAll('meta[content="GitLab"]').length;
@@ -305,43 +310,47 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
       }
     }
 
-    const resultDiv = this.window.querySelector('#result');
-    
-    if (error != null) {
-      resultDiv.innerHTML = error;
-      this.setStatus(false, true, false);
-      return;
+      const resultDiv = this.window.querySelector('#result');
+      
+      if (error != null) {
+        resultDiv.innerHTML = error;
+        this.setStatus(false, true, false);
+        return;
+      }
+
+      this.setStatus(true);
+
+      // Check cache first
+      await chrome.storage.session.get([diffPath])
+        .then((result) => {
+          if (result[diffPath]) {
+            resultDiv.innerHTML = result[diffPath];
+            this.setStatus(false);
+          } else {
+            // No cache in session, try background fallback
+            return chrome.runtime.sendMessage({ action: 'getCache', key: diffPath })
+              .then((bgResult) => {
+                if (bgResult?.[diffPath]) {
+                  resultDiv.innerHTML = bgResult[diffPath];
+                  this.setStatus(false);
+                } else {
+                  // No cache at all, run review
+                  return this.reviewPR(diffPath, context, title);
+                }
+              })
+              .catch(() => {
+                // Background cache failed, run review
+                return this.reviewPR(diffPath, context, title);
+              });
+          }
+        })
+        .catch(() => {
+          // Session storage failed, run review directly
+          return this.reviewPR(diffPath, context, title);
+        });
+    } finally {
+      this.isReviewing = false;
+      console.log('[FloatingReview] Review completed/finished');
     }
-
-    this.setStatus(true);
-
-    // Check cache first
-    chrome.storage.session.get([diffPath])
-      .then((result) => {
-        if (result[diffPath]) {
-          resultDiv.innerHTML = result[diffPath];
-          this.setStatus(false);
-        } else {
-          // No cache in session, try background fallback
-          return chrome.runtime.sendMessage({ action: 'getCache', key: diffPath })
-            .then((bgResult) => {
-              if (bgResult?.[diffPath]) {
-                resultDiv.innerHTML = bgResult[diffPath];
-                this.setStatus(false);
-              } else {
-                // No cache at all, run review
-                this.reviewPR(diffPath, context, title);
-              }
-            })
-            .catch(() => {
-              // Background cache failed, run review
-              this.reviewPR(diffPath, context, title);
-            });
-        }
-      })
-      .catch(() => {
-        // Session storage failed, run review directly
-        this.reviewPR(diffPath, context, title);
-      });
   }
 }

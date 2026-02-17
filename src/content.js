@@ -13,34 +13,61 @@ const windowInstances = {
 console.log('[CS] Content script loaded on:', window.location.href);
 
 /**
- * Get or create window instance (singleton factory)
+ * Get or create window instance (singleton factory).
+ * Reuses the same instance until DOM is removed (e.g. page unload / destroy()).
+ * Closing the window (hide) does not remove DOM, so the same instance is reused.
  */
 function getWindowInstance(type, WindowClass) {
-  // If instance exists but DOM was removed, recreate
   if (windowInstances[type] && !windowInstances[type].exists()) {
-    console.log(`[CS] ${type} window DOM was removed, recreating`);
     windowInstances[type] = null;
   }
-  
-  // Create new instance if needed
   if (!windowInstances[type]) {
-    console.log(`[CS] Creating new ${type} window instance`);
     windowInstances[type] = new WindowClass();
   }
-  
   return windowInstances[type];
 }
 
-// Listen for messages from background script
+// Listen for messages from background script (one handler, linear flow)
 chrome.runtime.onMessage.addListener((request) => {
   if (request.action === 'toggleFloatingWindow') {
-    console.log('[CS] Toggle review window requested');
-    const window = getWindowInstance('review', FloatingReviewWindow);
-    window.toggle();
-  } else if (request.action === 'explainText') {
-    console.log('[CS] Explain text requested, text length:', request.text?.length);
-    const window = getWindowInstance('explain', FloatingExplainWindow);
-    window.show(request.text);
+    console.log('[CS] Toggle window message received, timestamp:', request.timestamp);
+    
+    // Ignore stale messages (older than 5 seconds)
+    const messageAge = Date.now() - (request.timestamp || 0);
+    console.log('[CS] Message age:', messageAge, 'ms');
+    if (messageAge > 5000) {
+      console.log('[CS] ❌ IGNORING stale toggleFloatingWindow message (too old)');
+      return true;
+    }
+    
+    const win = getWindowInstance('review', FloatingReviewWindow);
+    win.toggle();
+    return true;
+  }
+  if (request.action === 'explainText') {
+    console.log('[CS] ========== EXPLAIN MESSAGE RECEIVED ==========');
+    console.log('[CS] Request text:', request.text?.substring(0, 50) + (request.text?.length > 50 ? '...' : ''));
+    console.log('[CS] Request text length:', request.text?.length);
+    console.log('[CS] Request timestamp:', request.timestamp);
+    
+    // Ignore stale messages (older than 5 seconds)
+    const messageAge = Date.now() - (request.timestamp || 0);
+    console.log('[CS] Message age:', messageAge, 'ms');
+    if (messageAge > 5000) {
+      console.log('[CS] ❌ IGNORING stale message (too old)');
+      return true;
+    }
+    
+    // Reuse same explain window instance; show() updates content and makes it visible
+    const win = getWindowInstance('explain', FloatingExplainWindow);
+    
+    console.log('[CS] Window exists:', !!win.window);
+    console.log('[CS] Window display:', win.window?.style.display);
+    console.log('[CS] Window selectedText:', win.selectedText?.substring(0, 50) + (win.selectedText?.length > 50 ? '...' : ''));
+    console.log('[CS] ✅ Calling win.show()');
+    
+    win.show(request.text);
+    return true;
   }
   return true;
 });

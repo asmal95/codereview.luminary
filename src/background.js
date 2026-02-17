@@ -15,36 +15,48 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('[BG] Context menu created');
 });
 
+// Debounce: avoid sending explainText twice (e.g. double context menu fire) so window doesn't reopen after close
+let lastExplainSentAt = 0;
+const EXPLAIN_DEBOUNCE_MS = 1500;
+
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === 'explainText' && info.selectionText) {
-    console.log('[BG] Context menu clicked, selected text length:', info.selectionText.length);
-    
+  console.log('[BG] ========== CONTEXT MENU CLICKED ==========');
+  console.log('[BG] menuItemId:', info.menuItemId);
+  console.log('[BG] Selected text:', info.selectionText?.substring(0, 50) + (info.selectionText?.length > 50 ? '...' : ''));
+  
+  if (info.menuItemId !== 'explainText' || !info.selectionText) return;
+
+  const now = Date.now();
+  const timeSinceLastExplain = now - lastExplainSentAt;
+  console.log('[BG] Time since last explain:', timeSinceLastExplain, 'ms (threshold:', EXPLAIN_DEBOUNCE_MS, 'ms)');
+  
+  if (now - lastExplainSentAt < EXPLAIN_DEBOUNCE_MS) {
+    console.log('[BG] ❌ Explain DEBOUNCED (ignoring duplicate)');
+    return;
+  }
+  lastExplainSentAt = now;
+
+  const payload = { action: 'explainText', text: info.selectionText, timestamp: now };
+  console.log('[BG] ✅ Sending explainText message, timestamp:', now);
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, payload);
+    console.log('[BG] Message sent to content script successfully');
+  } catch (error) {
+    console.log('[BG] Failed to send message, injecting content script...');
     try {
-      await chrome.tabs.sendMessage(tab.id, { 
-        action: 'explainText', 
-        text: info.selectionText 
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js']
       });
-      console.log('[BG] Message sent to content script');
-    } catch (error) {
-      console.log('[BG] Injecting content script for explain feature...');
-      
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          files: ['content.js']
-        });
-        
-        injectedTabs.add(tab.id);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        await chrome.tabs.sendMessage(tab.id, { 
-          action: 'explainText', 
-          text: info.selectionText 
-        });
-        console.log('[BG] Content script injected and message sent');
-      } catch (injectError) {
-        console.error('[BG] Failed to inject for explain:', injectError);
-      }
+      injectedTabs.add(tab.id);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('[BG] Content script injected, sending message again...');
+      await chrome.tabs.sendMessage(tab.id, payload);
+      console.log('[BG] Message sent after injection');
+    } catch (injectError) {
+      console.error('[BG] Failed to inject for explain:', injectError);
     }
   }
 });
@@ -53,8 +65,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.action.onClicked.addListener(async (tab) => {
   console.log('[BG] Extension icon clicked, tab:', tab.id);
   
+  const payload = { action: 'toggleFloatingWindow', timestamp: Date.now() };
+  
   try {
-    await chrome.tabs.sendMessage(tab.id, { action: 'toggleFloatingWindow' });
+    await chrome.tabs.sendMessage(tab.id, payload);
     console.log('[BG] Message sent successfully');
   } catch (error) {
     console.log('[BG] Injecting content script...');
@@ -67,7 +81,7 @@ chrome.action.onClicked.addListener(async (tab) => {
       
       injectedTabs.add(tab.id);
       await new Promise(resolve => setTimeout(resolve, 100));
-      await chrome.tabs.sendMessage(tab.id, { action: 'toggleFloatingWindow' });
+      await chrome.tabs.sendMessage(tab.id, payload);
       console.log('[BG] Content script injected and message sent');
     } catch (injectError) {
       console.error('[BG] Failed to inject:', injectError);

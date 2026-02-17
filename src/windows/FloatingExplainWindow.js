@@ -10,7 +10,10 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   constructor() {
     super('codereview-explain-window', 'codereview-explain-window');
     this.selectedText = '';
-    this.isProcessing = false; // Track if request is in progress
+    this.state = 'IDLE'; // IDLE | LOADING | STREAMING | COMPLETED | ERROR
+    this.lastResult = '';
+    this.streamRequestId = 0;
+    this.lastHideTime = 0; // Track when window was closed
     this.createWindow(600, 600);
     this.loadState();
   }
@@ -107,105 +110,169 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   }
 
   show(text) {
-    // Always save current question input value before any manipulation
-    // This prevents losing user input in any scenario
-    const questionInput = this.window.querySelector('#explain-question-input');
-    let savedQuestion = '';
-    if (questionInput) {
-      savedQuestion = questionInput.value;
+    console.log('[FloatingExplain] ========== show() CALLED ==========');
+    console.log('[FloatingExplain] Current state:', this.state);
+    console.log('[FloatingExplain] Current selectedText:', this.selectedText?.substring(0, 50) + (this.selectedText?.length > 50 ? '...' : ''));
+    console.log('[FloatingExplain] New text:', text?.substring(0, 50) + (text?.length > 50 ? '...' : ''));
+    
+    if (!this.window) return;
+    
+    // Prevent reopening if window was just closed with same text (cooldown period)
+    const timeSinceHide = Date.now() - this.lastHideTime;
+    const sameText = this.selectedText === text;
+    console.log('[FloatingExplain] Time since hide:', timeSinceHide, 'ms, same text:', sameText);
+    
+    if (timeSinceHide < 2000 && sameText) {
+      console.log('[FloatingExplain] ❌ IGNORING show() - cooldown period (window just closed with same text)');
+      return;
+    }
+    
+    // Don't update anything if streaming - just make window visible
+    if (this.state === 'STREAMING') {
+      console.log('[FloatingExplain] State is STREAMING, just making visible');
+      super.show();
+      return;
+    }
+    
+    // If text changed, reset to IDLE state (clear old result)
+    const textChanged = !sameText;
+    console.log('[FloatingExplain] Text changed:', textChanged);
+    
+    if (textChanged && this.state !== 'LOADING') {
+      console.log('[FloatingExplain] Resetting to IDLE, clearing result');
+      this.state = 'IDLE';
+      this.lastResult = '';
     }
     
     this.selectedText = text;
+    this.updateSelectedTextDisplay();
     
-    // Update UI with selected text
-    const selectedTextDiv = this.window.querySelector('#explain-selected-text');
-    if (selectedTextDiv) {
-      selectedTextDiv.textContent = text;
+    // Update UI to reflect current state
+    if (textChanged) {
+      console.log('[FloatingExplain] Text changed, calling updateUI()');
+      this.updateUI();
     }
     
-    // Only reset form if not processing and no saved question
-    // This prevents losing user input when window is shown again
-    if (questionInput && !this.isProcessing && !savedQuestion) {
-      questionInput.value = '';
-    } else if (questionInput && savedQuestion) {
-      // Always restore saved question if it exists (even during processing)
-      // This ensures user's input is never lost
-      questionInput.value = savedQuestion;
-    }
-    
-    // Only hide result section if not processing
-    const resultSection = this.window.querySelector('#explain-result-section');
-    if (resultSection && !this.isProcessing) {
-      resultSection.style.display = 'none';
-    }
-    
-    const resultDiv = this.window.querySelector('#explain-result');
-    if (resultDiv && !this.isProcessing) {
-      resultDiv.innerHTML = '';
-    }
-    
-    // Ensure button is enabled if not processing
-    const submitBtn = this.window.querySelector('#explain-submit-btn');
-    if (submitBtn && !this.isProcessing) {
-      submitBtn.disabled = false;
-      this.resetSubmitButton(submitBtn);
-    }
-    
-    // Show window using base class logic
+    console.log('[FloatingExplain] Calling super.show()');
     super.show();
+  }
+  
+  hide() {
+    this.lastHideTime = Date.now();
+    console.log('[FloatingExplain] hide() called at:', this.lastHideTime);
+    super.hide();
+  }
+  
+  updateSelectedTextDisplay() {
+    const selectedTextDiv = this.window?.querySelector('#explain-selected-text');
+    if (selectedTextDiv) {
+      selectedTextDiv.textContent = this.selectedText;
+    }
+  }
+  
+  updateUI() {
+    if (!this.window) return;
     
-    // Focus on question input after window is shown (only if not processing)
-    if (questionInput && !this.isProcessing) {
-      setTimeout(() => {
-        questionInput.focus();
-      }, 100);
+    const resultSection = this.window.querySelector('#explain-result-section');
+    const resultDiv = this.window.querySelector('#explain-result');
+    const submitBtn = this.window.querySelector('#explain-submit-btn');
+    
+    switch(this.state) {
+      case 'IDLE':
+        // Clean slate - hide result, enable button
+        if (resultSection) resultSection.style.display = 'none';
+        if (resultDiv) resultDiv.innerHTML = '';
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          this.resetSubmitButton(submitBtn);
+        }
+        this.setStatus('');
+        break;
+        
+      case 'LOADING':
+        // Show loading state
+        if (resultSection) resultSection.style.display = 'block';
+        if (resultDiv) resultDiv.innerHTML = '';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Думаю...';
+        }
+        this.setStatus(spinner);
+        break;
+        
+      case 'STREAMING':
+        // Show result as it streams in - CRITICAL: keep result section visible
+        if (resultSection) resultSection.style.display = 'block';
+        if (resultDiv && this.lastResult) {
+          resultDiv.innerHTML = this.lastResult;
+        }
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Думаю...';
+        }
+        this.setStatus(spinner);
+        break;
+        
+      case 'COMPLETED':
+        // Show final result, enable button
+        if (resultSection) resultSection.style.display = 'block';
+        if (resultDiv && this.lastResult) {
+          resultDiv.innerHTML = this.lastResult;
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          this.resetSubmitButton(submitBtn);
+        }
+        this.setStatus(checkmark);
+        break;
+        
+      case 'ERROR':
+        // Show error, enable button
+        if (resultSection) resultSection.style.display = 'block';
+        if (resultDiv && this.lastResult) {
+          resultDiv.innerHTML = this.lastResult;
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          this.resetSubmitButton(submitBtn);
+        }
+        this.setStatus(xcircle);
+        break;
     }
   }
 
   async explainText() {
     // Prevent multiple simultaneous requests
-    if (this.isProcessing) {
+    if (this.state === 'LOADING' || this.state === 'STREAMING') {
+      console.log('[CS] Request already in progress, ignoring duplicate call');
       return;
     }
     
+    if (!this.window) {
+      console.error('[CS] Window not found');
+      return;
+    }
+
     const questionInput = this.window.querySelector('#explain-question-input');
-    const resultSection = this.window.querySelector('#explain-result-section');
-    const resultDiv = this.window.querySelector('#explain-result');
-    const submitBtn = this.window.querySelector('#explain-submit-btn');
-    
-    // Save question value before any DOM manipulation
     const additionalQuestion = questionInput?.value.trim() || '';
     
-    // Mark as processing
-    this.isProcessing = true;
+    // Start new request
+    this.state = 'LOADING';
+    this.streamRequestId = (this.streamRequestId || 0) + 1;
+    const currentRequestId = this.streamRequestId;
+    this.lastResult = '';
     
-    // Show result section
-    if (resultSection) {
-      resultSection.style.display = 'block';
-    }
-    if (resultDiv) {
-      resultDiv.innerHTML = '';
-    }
+    this.updateUI();
     
-    // Set loading state
-    this.setStatus(spinner);
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Думаю...';
-    }
-    
-    // Get config with custom prompt
+    // Get config
     let config;
     try {
       config = await getConfig();
     } catch (e) {
       console.error('[CS] Failed to get config for explain:', e);
-      if (resultDiv) {
-        resultDiv.innerHTML = 'Ошибка: не удалось загрузить конфигурацию. Проверьте настройки расширения.';
-      }
-      this.setStatus(xcircle);
-      this.isProcessing = false;
-      this.resetSubmitButton(submitBtn);
+      this.state = 'ERROR';
+      this.lastResult = 'Ошибка: не удалось загрузить конфигурацию. Проверьте настройки расширения.';
+      this.updateUI();
       return;
     }
     
@@ -222,34 +289,41 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       await ApiClient.streamRequest(
         config,
         messages,
+        // onChunk
         (answer) => {
-          if (resultDiv) {
-            resultDiv.innerHTML = converter.makeHtml(answer);
-          }
+          if (currentRequestId !== this.streamRequestId) return;
+          if (!this.window) return;
+          
+          this.state = 'STREAMING';
+          this.lastResult = converter.makeHtml(answer);
+          this.updateUI();
         },
+        // onDone
         () => {
-          this.setStatus(checkmark);
-          this.isProcessing = false;
-          this.resetSubmitButton(submitBtn);
+          if (currentRequestId !== this.streamRequestId) return;
+          if (!this.window) return;
+          
+          this.state = 'COMPLETED';
+          this.updateUI();
         },
+        // onError
         (error) => {
-          if (resultDiv) {
-            resultDiv.innerHTML = `Ошибка: ${error}`;
-          }
-          this.setStatus(xcircle);
-          this.isProcessing = false;
-          this.resetSubmitButton(submitBtn);
+          if (currentRequestId !== this.streamRequestId) return;
+          if (!this.window) return;
+          
+          this.state = 'ERROR';
+          // Append error to existing result
+          const existing = this.lastResult;
+          const errorHtml = converter.makeHtml(error.replace(/\n/g, '<br>'));
+          this.lastResult = existing ? existing + '<hr>' + errorHtml : errorHtml;
+          this.updateUI();
         }
       );
     } catch (error) {
-      // Ensure we always reset processing state even if streamRequest throws
       console.error('[CS] Unexpected error in explainText:', error);
-      if (resultDiv) {
-        resultDiv.innerHTML = `Ошибка: ${error.message || error}`;
-      }
-      this.setStatus(xcircle);
-      this.isProcessing = false;
-      this.resetSubmitButton(submitBtn);
+      this.state = 'ERROR';
+      this.lastResult = `Ошибка: ${error.message || error}`;
+      this.updateUI();
     }
   }
 

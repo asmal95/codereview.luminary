@@ -291,6 +291,16 @@ export class BaseFloatingWindow {
   }
 
   /**
+   * Re-append window if it was removed from DOM by page scripts
+   */
+  ensureInDocument() {
+    if (this.window && !document.contains(this.window)) {
+      console.log(`[CS] Window ${this.windowId} was removed, re-appending`);
+      document.body.appendChild(this.window);
+    }
+  }
+
+  /**
    * Check if window exists in DOM
    */
   exists() {
