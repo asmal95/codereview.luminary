@@ -10,10 +10,12 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   constructor() {
     super('codereview-explain-window', 'codereview-explain-window');
     this.selectedText = '';
+    this.messages = []; // Chat history: [{role: 'user'|'assistant', content: string}]
     this.state = 'IDLE'; // IDLE | LOADING | STREAMING | COMPLETED | ERROR
     this.lastResult = '';
     this.streamRequestId = 0;
     this.lastHideTime = 0; // Track when window was closed
+    this.wasHidden = true; // Track if window was hidden (should clear history on show)
     this.createWindow(600, 600);
     this.loadState();
   }
@@ -21,7 +23,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   createWindowContent() {
     return `
       <div class="codereview-window-header">
-        <div class="codereview-window-title">🤖 AI Объяснение</div>
+        <div class="codereview-window-title">💬 AI Чат</div>
         <div class="codereview-window-controls">
           <button class="codereview-control-btn codereview-center-btn" title="Center window">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
@@ -41,38 +43,31 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         </div>
       </div>
       <div class="codereview-window-body">
-        <div class="codereview-explain-content">
-          <div class="codereview-explain-section">
-            <label class="codereview-explain-label">Выделенный текст:</label>
-            <div class="codereview-explain-selected-text" id="explain-selected-text"></div>
+        <!-- Context panel (collapsible) -->
+        <div class="codereview-context-section" id="context-section">
+          <div class="codereview-context-header" id="context-header">
+            <span>📋 Контекст кода</span>
+            <span class="codereview-toggle-icon">▼</span>
           </div>
-          
-          <div class="codereview-explain-section">
-            <label class="codereview-explain-label">Ваш вопрос (необязательно):</label>
-            <textarea 
-              class="codereview-explain-input" 
-              id="explain-question-input" 
-              placeholder="Например: 'Что делает эта функция?' или 'Объясни простыми словами'"
-              rows="3"
-            ></textarea>
-          </div>
-          
-          <div class="codereview-explain-actions">
-            <button class="codereview-explain-btn" id="explain-submit-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
-              </svg>
-              Объяснить
-            </button>
-          </div>
-          
-          <div class="codereview-explain-section" id="explain-result-section" style="display: none;">
-            <label class="codereview-explain-label">
-              <span id="explain-status-icon"></span>
-              Ответ AI:
-            </label>
-            <div class="codereview-explain-result" id="explain-result"></div>
-          </div>
+          <div class="codereview-context-content" id="explain-context"></div>
+        </div>
+        
+        <!-- Chat messages (scrollable) -->
+        <div class="codereview-chat-messages" id="explain-messages"></div>
+        
+        <!-- Fixed input area at bottom -->
+        <div class="codereview-chat-input-area">
+          <textarea 
+            id="explain-question-input"
+            placeholder="Задайте вопрос о коде (можно оставить пустым для общего объяснения)..."
+            rows="2"
+          ></textarea>
+          <button class="codereview-explain-btn" id="explain-submit-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+            </svg>
+            Отправить
+          </button>
         </div>
       </div>
       <div class="codereview-resize-handle"></div>
@@ -84,6 +79,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
 
     const submitBtn = this.window.querySelector('#explain-submit-btn');
     const questionInput = this.window.querySelector('#explain-question-input');
+    const contextHeader = this.window.querySelector('#context-header');
 
     // Submit button
     if (submitBtn) {
@@ -92,13 +88,116 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       });
     }
     
-    // Enter key in textarea (Ctrl+Enter to submit)
+    // Enter key in textarea (Enter to submit, Shift+Enter for new line)
     if (questionInput) {
       questionInput.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
           this.explainText();
         }
       });
+    }
+    
+    // Toggle context panel
+    if (contextHeader) {
+      contextHeader.addEventListener('click', () => {
+        this.toggleContext();
+      });
+    }
+  }
+
+  // Clear chat history
+  clearChat() {
+    this.messages = [];
+    const messagesContainer = this.window?.querySelector('#explain-messages');
+    if (messagesContainer) {
+      messagesContainer.innerHTML = '';
+    }
+  }
+
+  // Render a single message and return the DOM element
+  renderMessage(role, content, isStreaming = false) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `codereview-message codereview-message-${role}`;
+    
+    if (role === 'assistant') {
+      // For assistant messages, render markdown
+      messageDiv.innerHTML = content ? converter.makeHtml(content) : '';
+      if (isStreaming) {
+        messageDiv.classList.add('streaming');
+      }
+    } else {
+      // For user messages, render as plain text
+      messageDiv.textContent = content;
+    }
+    
+    return messageDiv;
+  }
+
+  // Add message to history and render it
+  addMessage(role, content) {
+    this.messages.push({ role, content });
+    
+    const messagesContainer = this.window?.querySelector('#explain-messages');
+    if (messagesContainer) {
+      const messageElement = this.renderMessage(role, content);
+      messagesContainer.appendChild(messageElement);
+      this.scrollToBottom();
+    }
+  }
+
+  // Scroll chat messages to bottom
+  scrollToBottom() {
+    const messagesContainer = this.window?.querySelector('#explain-messages');
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  }
+
+  // Toggle context panel collapsed state
+  toggleContext() {
+    const contextSection = this.window?.querySelector('#context-section');
+    const toggleIcon = this.window?.querySelector('.codereview-toggle-icon');
+    
+    if (contextSection) {
+      contextSection.classList.toggle('collapsed');
+      if (toggleIcon) {
+        toggleIcon.textContent = contextSection.classList.contains('collapsed') ? '▶' : '▼';
+      }
+    }
+  }
+
+  // Collapse context panel
+  collapseContext() {
+    const contextSection = this.window?.querySelector('#context-section');
+    const toggleIcon = this.window?.querySelector('.codereview-toggle-icon');
+    
+    if (contextSection && !contextSection.classList.contains('collapsed')) {
+      contextSection.classList.add('collapsed');
+      if (toggleIcon) {
+        toggleIcon.textContent = '▶';
+      }
+    }
+  }
+
+  // Expand context panel
+  expandContext() {
+    const contextSection = this.window?.querySelector('#context-section');
+    const toggleIcon = this.window?.querySelector('.codereview-toggle-icon');
+    
+    if (contextSection && contextSection.classList.contains('collapsed')) {
+      contextSection.classList.remove('collapsed');
+      if (toggleIcon) {
+        toggleIcon.textContent = '▼';
+      }
+    }
+  }
+
+  // Update context panel with selected text
+  updateContextDisplay() {
+    const contextDiv = this.window?.querySelector('#explain-context');
+    if (contextDiv) {
+      contextDiv.textContent = this.selectedText;
     }
   }
 
@@ -130,28 +229,26 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     // Don't update anything if streaming - just make window visible
     if (this.state === 'STREAMING') {
       console.log('[FloatingExplain] State is STREAMING, just making visible');
+      this.wasHidden = false;
       super.show();
       return;
     }
     
-    // If text changed, reset to IDLE state (clear old result)
+    // Clear chat history if text changed OR window was previously hidden
     const textChanged = !sameText;
-    console.log('[FloatingExplain] Text changed:', textChanged);
+    console.log('[FloatingExplain] Opening window - text changed:', textChanged, 'wasHidden:', this.wasHidden);
     
-    if (textChanged && this.state !== 'LOADING') {
-      console.log('[FloatingExplain] Resetting to IDLE, clearing result');
+    if ((textChanged || this.wasHidden) && this.state !== 'LOADING') {
+      console.log('[FloatingExplain] Clearing chat history for fresh start');
       this.state = 'IDLE';
-      this.lastResult = '';
+      this.clearChat();
+      // Expand context when opening window
+      this.expandContext();
     }
     
     this.selectedText = text;
-    this.updateSelectedTextDisplay();
-    
-    // Update UI to reflect current state
-    if (textChanged) {
-      console.log('[FloatingExplain] Text changed, calling updateUI()');
-      this.updateUI();
-    }
+    this.updateContextDisplay();
+    this.wasHidden = false; // Reset flag after showing
     
     console.log('[FloatingExplain] Calling super.show()');
     super.show();
@@ -159,86 +256,9 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   
   hide() {
     this.lastHideTime = Date.now();
+    this.wasHidden = true; // Mark that window was hidden
     console.log('[FloatingExplain] hide() called at:', this.lastHideTime);
     super.hide();
-  }
-  
-  updateSelectedTextDisplay() {
-    const selectedTextDiv = this.window?.querySelector('#explain-selected-text');
-    if (selectedTextDiv) {
-      selectedTextDiv.textContent = this.selectedText;
-    }
-  }
-  
-  updateUI() {
-    if (!this.window) return;
-    
-    const resultSection = this.window.querySelector('#explain-result-section');
-    const resultDiv = this.window.querySelector('#explain-result');
-    const submitBtn = this.window.querySelector('#explain-submit-btn');
-    
-    switch(this.state) {
-      case 'IDLE':
-        // Clean slate - hide result, enable button
-        if (resultSection) resultSection.style.display = 'none';
-        if (resultDiv) resultDiv.innerHTML = '';
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          this.resetSubmitButton(submitBtn);
-        }
-        this.setStatus('');
-        break;
-        
-      case 'LOADING':
-        // Show loading state
-        if (resultSection) resultSection.style.display = 'block';
-        if (resultDiv) resultDiv.innerHTML = '';
-        if (submitBtn) {
-          submitBtn.disabled = true;
-          submitBtn.textContent = 'Думаю...';
-        }
-        this.setStatus(spinner);
-        break;
-        
-      case 'STREAMING':
-        // Show result as it streams in - CRITICAL: keep result section visible
-        if (resultSection) resultSection.style.display = 'block';
-        if (resultDiv && this.lastResult) {
-          resultDiv.innerHTML = this.lastResult;
-        }
-        if (submitBtn) {
-          submitBtn.disabled = true;
-          submitBtn.textContent = 'Думаю...';
-        }
-        this.setStatus(spinner);
-        break;
-        
-      case 'COMPLETED':
-        // Show final result, enable button
-        if (resultSection) resultSection.style.display = 'block';
-        if (resultDiv && this.lastResult) {
-          resultDiv.innerHTML = this.lastResult;
-        }
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          this.resetSubmitButton(submitBtn);
-        }
-        this.setStatus(checkmark);
-        break;
-        
-      case 'ERROR':
-        // Show error, enable button
-        if (resultSection) resultSection.style.display = 'block';
-        if (resultDiv && this.lastResult) {
-          resultDiv.innerHTML = this.lastResult;
-        }
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          this.resetSubmitButton(submitBtn);
-        }
-        this.setStatus(xcircle);
-        break;
-    }
   }
 
   async explainText() {
@@ -254,49 +274,121 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     }
 
     const questionInput = this.window.querySelector('#explain-question-input');
-    const additionalQuestion = questionInput?.value.trim() || '';
+    const submitBtn = this.window.querySelector('#explain-submit-btn');
+    const userQuestion = questionInput?.value.trim() || '';
+    
+    // Allow empty question for first request (acts as "explain this code")
+    const isFirstRequest = this.messages.length === 0;
+    
+    // Add user message to chat only if there's a question
+    // For first request with empty input, don't add user message
+    if (userQuestion) {
+      this.addMessage('user', userQuestion);
+    }
+    
+    // Always collapse context when sending request to give more space for chat
+    this.collapseContext();
+    
+    // Clear input
+    if (questionInput) {
+      questionInput.value = '';
+    }
+    
+    // Disable button
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Думаю...';
+    }
     
     // Start new request
     this.state = 'LOADING';
     this.streamRequestId = (this.streamRequestId || 0) + 1;
     const currentRequestId = this.streamRequestId;
-    this.lastResult = '';
-    
-    this.updateUI();
     
     // Get config
     let config;
     try {
       config = await getConfig();
+      console.log('[CS] Config loaded, explainPrompt preview:', config.explainPrompt.substring(0, 150));
     } catch (e) {
       console.error('[CS] Failed to get config for explain:', e);
       this.state = 'ERROR';
-      this.lastResult = 'Ошибка: не удалось загрузить конфигурацию. Проверьте настройки расширения.';
-      this.updateUI();
+      const errorMsg = 'Ошибка: не удалось загрузить конфигурацию. Проверьте настройки расширения.';
+      
+      const messagesContainer = this.window.querySelector('#explain-messages');
+      if (messagesContainer) {
+        const errorElement = this.renderMessage('assistant', errorMsg);
+        errorElement.classList.add('error');
+        messagesContainer.appendChild(errorElement);
+        this.scrollToBottom();
+      }
+      
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        this.resetSubmitButton(submitBtn);
+      }
       return;
     }
     
-    // Build prompt using custom template with variable substitution
-    const userPrompt = config.explainPrompt
-      .replace(/{text}/g, this.selectedText)
-      .replace(/{question}/g, additionalQuestion ? `Дополнительный вопрос: ${additionalQuestion}` : '');
+    // Build prompt using explainPrompt template with variable substitution
+    let systemPrompt;
     
-    const messages = [
-      { role: 'user', content: userPrompt }
+    if (isFirstRequest) {
+      // First request: use explainPrompt template from config
+      const questionText = userQuestion ? `Дополнительный вопрос: ${userQuestion}` : '';
+      systemPrompt = config.explainPrompt
+        .replace(/{text}/g, this.selectedText)
+        .replace(/{question}/g, questionText);
+      
+      console.log('[CS] First request - using explainPrompt');
+      console.log('[CS] Selected text length:', this.selectedText.length);
+      console.log('[CS] Selected text preview:', this.selectedText.substring(0, 100));
+      console.log('[CS] Question:', userQuestion || '(empty)');
+    } else {
+      // Follow-up requests: use simple context reminder
+      systemPrompt = `Контекст кода:\n\n${this.selectedText}\n\nОтветь на вопрос пользователя о коде выше.`;
+      console.log('[CS] Follow-up request - using simple prompt');
+    }
+    
+    console.log('[CS] System prompt length:', systemPrompt.length);
+    console.log('[CS] System prompt preview:', systemPrompt.substring(0, 200));
+    
+    // Build API messages
+    const apiMessages = [
+      { role: 'system', content: systemPrompt },
+      ...this.messages.map(m => ({ role: m.role, content: m.content }))
     ];
     
+    console.log('[CS] Total API messages:', apiMessages.length);
+    console.log('[CS] API messages:', apiMessages.map(m => ({ role: m.role, length: m.content.length })));
+    console.log('[CS] Full API messages for debugging:', JSON.stringify(apiMessages, null, 2));
+    
+    // Create empty assistant message for streaming
+    const messagesContainer = this.window.querySelector('#explain-messages');
+    let assistantElement = null;
+    
+    if (messagesContainer) {
+      assistantElement = this.renderMessage('assistant', '', true);
+      messagesContainer.appendChild(assistantElement);
+      this.scrollToBottom();
+    }
+    
+    let fullResponse = '';
+    
     try {
+      this.state = 'STREAMING';
+      
       await ApiClient.streamRequest(
         config,
-        messages,
-        // onChunk
-        (answer) => {
+        apiMessages,
+        // onChunk - receives full accumulated response, not just the new chunk
+        (accumulatedResponse) => {
           if (currentRequestId !== this.streamRequestId) return;
-          if (!this.window) return;
+          if (!this.window || !assistantElement) return;
           
-          this.state = 'STREAMING';
-          this.lastResult = converter.makeHtml(answer);
-          this.updateUI();
+          fullResponse = accumulatedResponse;  // Just assign, don't concatenate!
+          assistantElement.innerHTML = converter.makeHtml(fullResponse);
+          this.scrollToBottom();
         },
         // onDone
         () => {
@@ -304,26 +396,64 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
           if (!this.window) return;
           
           this.state = 'COMPLETED';
-          this.updateUI();
+          
+          // Add assistant message to history
+          this.messages.push({ role: 'assistant', content: fullResponse });
+          
+          // Remove streaming class
+          if (assistantElement) {
+            assistantElement.classList.remove('streaming');
+          }
+          
+          // Re-enable button
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            this.resetSubmitButton(submitBtn);
+          }
         },
         // onError
         (error) => {
           if (currentRequestId !== this.streamRequestId) return;
-          if (!this.window) return;
+          if (!this.window || !assistantElement) return;
           
           this.state = 'ERROR';
-          // Append error to existing result
-          const existing = this.lastResult;
-          const errorHtml = converter.makeHtml(error.replace(/\n/g, '<br>'));
-          this.lastResult = existing ? existing + '<hr>' + errorHtml : errorHtml;
-          this.updateUI();
+          
+          const errorText = `Ошибка: ${error}`;
+          
+          if (fullResponse) {
+            // If we have partial response, add error below it
+            assistantElement.innerHTML = converter.makeHtml(fullResponse + '\n\n---\n\n' + errorText);
+          } else {
+            // Otherwise just show error
+            assistantElement.textContent = errorText;
+          }
+          
+          assistantElement.classList.add('error');
+          assistantElement.classList.remove('streaming');
+          this.scrollToBottom();
+          
+          // Re-enable button
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            this.resetSubmitButton(submitBtn);
+          }
         }
       );
     } catch (error) {
       console.error('[CS] Unexpected error in explainText:', error);
       this.state = 'ERROR';
-      this.lastResult = `Ошибка: ${error.message || error}`;
-      this.updateUI();
+      
+      if (assistantElement) {
+        assistantElement.textContent = `Ошибка: ${error.message || error}`;
+        assistantElement.classList.add('error');
+        assistantElement.classList.remove('streaming');
+        this.scrollToBottom();
+      }
+      
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        this.resetSubmitButton(submitBtn);
+      }
     }
   }
 
@@ -332,9 +462,9 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       submitBtn.disabled = false;
       submitBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
         </svg>
-        Объяснить
+        Отправить
       `;
     }
   }

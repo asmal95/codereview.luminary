@@ -101,6 +101,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       'api_base_url', 
       'model',
       'api_timeout',
+      'max_tokens',
+      'temperature',
       'system_prompt',
       'review_prompt',
       'final_prompt',
@@ -238,6 +240,13 @@ chrome.runtime.onConnect.addListener((port) => {
             try {
               const json = JSON.parse(data);
               const content = json.choices?.[0]?.delta?.content || '';
+              const finishReason = json.choices?.[0]?.finish_reason;
+              
+              // Log finish reason when stream ends
+              if (finishReason) {
+                console.log('[BG] Stream finished with reason:', finishReason);
+                console.log('[BG] Full chunk data:', JSON.stringify(json, null, 2));
+              }
               
               if (content) {
                 chunkCount++;

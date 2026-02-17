@@ -234,13 +234,19 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     const userMessages = promptArray.map(msg => ({ role: 'user', content: msg }));
     const apiMessages = [systemMessage, ...userMessages];
 
+    console.log('[CS] Sending review request with', apiMessages.length, 'messages');
+    console.log('[CS] System prompt:', config.systemPrompt);
+    console.log('[CS] Final prompt:', config.finalPrompt);
+    
     await ApiClient.streamRequest(
       config,
       apiMessages,
       (answer) => {
+        console.log('[CS] Review answer length:', answer.length);
         resultDiv.innerHTML = converter.makeHtml(answer + ' \n\n' + warning);
       },
       () => {
+        console.log('[CS] Review completed, final length:', resultDiv.textContent.length);
         chrome.storage.session.set({ [diffPath]: resultDiv.innerHTML })
           .catch(() => chrome.runtime.sendMessage({ 
             action: 'setCache', 
@@ -252,6 +258,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
         this.setStatus(false);
       },
       (error) => {
+        console.error('[CS] Review error:', error);
         resultDiv.innerHTML = converter.makeHtml(error);
         this.setStatus(false, true, true);
       }

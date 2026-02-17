@@ -9,6 +9,8 @@ export async function getConfig() {
         'api_base_url', 
         'model',
         'api_timeout',
+        'max_tokens',
+        'temperature',
         'system_prompt',
         'review_prompt',
         'final_prompt',
@@ -26,6 +28,8 @@ export async function getConfig() {
   const baseUrl = options.api_base_url || 'https://api.openai.com/v1';
   const model = options.model || 'gpt-3.5-turbo';
   const apiTimeout = (options.api_timeout || 300) * 1000; // Convert seconds to milliseconds
+  const maxTokens = parseInt(options.max_tokens) || 8192; // Default 8192 tokens for responses
+  const temperature = options.temperature !== undefined ? parseFloat(options.temperature) : 0.7; // Default 0.7
   
   // Default prompts
   const systemPrompt = options.system_prompt || 
@@ -73,8 +77,10 @@ Do not provide feedback yet. I will follow-up with a description of the change i
     apiKey: isLocalhost ? 'dummy' : `***${apiKey.slice(-4)}`,
     baseUrl,
     model,
-    apiTimeout: `${apiTimeout}ms`
+    apiTimeout: `${apiTimeout}ms`,
+    maxTokens,
+    temperature
   });
   
-  return { apiKey, baseUrl, model, apiTimeout, systemPrompt, reviewPrompt, finalPrompt, explainPrompt };
+  return { apiKey, baseUrl, model, apiTimeout, maxTokens, temperature, systemPrompt, reviewPrompt, finalPrompt, explainPrompt };
 }

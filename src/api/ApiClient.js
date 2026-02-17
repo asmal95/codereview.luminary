@@ -14,12 +14,17 @@ export class ApiClient {
     const requestBody = {
       model: config.model,
       messages: messages,
-      stream: true
+      stream: true,
+      max_tokens: config.maxTokens || 8192,  // Configurable, default 8192
+      temperature: config.temperature !== undefined ? config.temperature : 0.7,  // Configurable, default 0.7
+      top_p: 1.0
     };
 
     const url = `${config.baseUrl}/chat/completions`;
     const timeoutMs = config.apiTimeout || 300000; // Default 5 minutes
     console.log('[CS] Starting streaming request to:', url, `timeout: ${timeoutMs}ms`);
+    console.log('[CS] Request body:', requestBody);
+    console.log('[CS] Messages summary:', messages.map(m => ({ role: m.role, length: m.content.length })));
 
     const port = chrome.runtime.connect({ name: 'streaming-api' });
     let fullResponse = '';
@@ -65,6 +70,7 @@ export class ApiClient {
         }
       } else if (msg.type === 'done') {
         console.log(`[CS] Stream completed, total chunks: ${chunkCount}, response length: ${fullResponse.length}`);
+        console.log('[CS] Full response:', fullResponse);
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
