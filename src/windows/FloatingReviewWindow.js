@@ -94,7 +94,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     if (tokens[2] === 'github.com' && tokens[5] === 'pull') {
       return `https://patch-diff.githubusercontent.com/raw/${tokens[3]}/${tokens[4]}/pull/${tokens[6]}.patch`;
     } else if (url.includes('/-/merge_requests/')) {
-      return url + '.patch';
+      return url + '.diff';
     }
     
     return null;
@@ -303,7 +303,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
         context = element.textContent;
       }
     } else if (provider === 'GitLab' && window.location.href.includes('/-/merge_requests/')) {
-      diffPath = window.location.href + '.patch';
+      diffPath = window.location.href + '.diff';
       
       const element = document.querySelector('.description textarea');
       if (element) {

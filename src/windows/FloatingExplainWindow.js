@@ -444,7 +444,15 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       this.state = 'ERROR';
       
       if (assistantElement) {
-        assistantElement.textContent = `Ошибка: ${error.message || error}`;
+        const errorText = `Ошибка: ${error.message || error}`;
+        
+        // Preserve partial response if any was received
+        if (fullResponse) {
+          assistantElement.innerHTML = converter.makeHtml(fullResponse + '\n\n---\n\n' + errorText);
+        } else {
+          assistantElement.textContent = errorText;
+        }
+        
         assistantElement.classList.add('error');
         assistantElement.classList.remove('streaming');
         this.scrollToBottom();
