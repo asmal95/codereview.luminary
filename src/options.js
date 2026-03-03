@@ -1,36 +1,9 @@
-// Default prompts
-const DEFAULT_SYSTEM_PROMPT = `You are a programming code change reviewer, provide feedback on the code changes given. Do not introduce yourselves.`;
-
-const DEFAULT_REVIEW_PROMPT = `The change has the following title: {title}.
-
-Your task is:
-- Review the code changes and provide feedback.
-- If there are any bugs, highlight them.
-- Provide details on missed use of best-practices.
-- Does the code do what it says in the commit messages?
-- Do not highlight minor issues and nitpicks.
-- Use bullet points if you have multiple comments.
-- Provide security recommendations if there are any.
-
-You are provided with the code changes (diffs) in a unidiff format.
-Do not provide feedback yet. I will follow-up with a description of the change in a new message.`;
-
-const DEFAULT_FINAL_PROMPT = `All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided. Provide response in Russian language.`;
-
-const DEFAULT_EXPLAIN_PROMPT = `Ты полезный AI ассистент. Твоя задача - объяснить выделенный текст понятно и на русском языке.
-
-Выделенный текст:
-{text}
-
-{question}
-
-Требования к ответу:
-- Объясняй понятно и структурировано
-- Используй примеры, где это уместно
-- Если это код, объясни что он делает и как работает
-- Если есть потенциальные проблемы или улучшения, укажи на них
-- Отвечай на русском языке
-- Будь кратким, но информативным`;
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_REVIEW_PROMPT,
+  DEFAULT_FINAL_PROMPT,
+  DEFAULT_EXPLAIN_PROMPT
+} from './utils/defaultPrompts.js';
 
 // Saves options to chrome.storage
 const saveOptions = () => {

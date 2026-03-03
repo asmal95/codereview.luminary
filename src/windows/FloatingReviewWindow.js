@@ -176,11 +176,12 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     const reviewPromptWithVars = config.reviewPrompt.replace(/{title}/g, title);
     promptArray.push(reviewPromptWithVars);
 
-    // Add context description
-    promptArray.push(`A description was given to help you assist in understand why these changes were made.
-    The description was provided in a markdown format. Do not provide feedback yet. I will follow-up with the code changes in diff format in a new message.
+    // Add context description (do not respond yet — diffs follow)
+    promptArray.push(`A description to help you understand why these changes were made (markdown):
 
-    ${context}`);
+${context}
+
+Do not respond yet. I will send the code changes in diff format next.`);
 
     // Remove binary patches
     const regex = /GIT\sbinary\spatch(.*)literal\s0/mgis;
@@ -212,7 +213,6 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
         patchPartArray.push(file.chunks.map(c => c.changes.map(t => t.content).join('\n')));
       }
       patchPartArray.push('```');
-      patchPartArray.push('\nDo not provide feedback yet. I will confirm once all code changes were submitted.');
 
       let patchPart = patchPartArray.join('\n');
       if (patchPart.length >= 15384) {

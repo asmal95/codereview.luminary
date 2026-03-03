@@ -1,3 +1,12 @@
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_REVIEW_PROMPT,
+  DEFAULT_FINAL_PROMPT,
+  DEFAULT_EXPLAIN_PROMPT,
+  EXPLAIN_DEFAULT_QUESTION,
+  EXPLAIN_FOLLOW_UP_SYSTEM
+} from './defaultPrompts.js';
+
 // Configuration management
 export async function getConfig() {
   let options;
@@ -31,43 +40,10 @@ export async function getConfig() {
   const maxTokens = parseInt(options.max_tokens) || 8192; // Default 8192 tokens for responses
   const temperature = options.temperature !== undefined ? parseFloat(options.temperature) : 0.7; // Default 0.7
   
-  // Default prompts
-  const systemPrompt = options.system_prompt || 
-    'You are a programming code change reviewer, provide feedback on the code changes given. Do not introduce yourselves.';
-  
-  const reviewPrompt = options.review_prompt || 
-    `The change has the following title: {title}.
-
-Your task is:
-- Review the code changes and provide feedback.
-- If there are any bugs, highlight them.
-- Provide details on missed use of best-practices.
-- Does the code do what it says in the commit messages?
-- Do not highlight minor issues and nitpicks.
-- Use bullet points if you have multiple comments.
-- Provide security recommendations if there are any.
-
-You are provided with the code changes (diffs) in a unidiff format.
-Do not provide feedback yet. I will follow-up with a description of the change in a new message.`;
-  
-  const finalPrompt = options.final_prompt || 
-    'All code changes have been provided. Please provide me with your code review based on all the changes, context & title provided. Provide response in Russian language.';
-  
-  const explainPrompt = options.explain_prompt || 
-    `Ты полезный AI ассистент. Твоя задача - объяснить выделенный текст понятно и на русском языке.
-
-Выделенный текст:
-{text}
-
-{question}
-
-Требования к ответу:
-- Объясняй понятно и структурировано
-- Используй примеры, где это уместно
-- Если это код, объясни что он делает и как работает
-- Если есть потенциальные проблемы или улучшения, укажи на них
-- Отвечай на русском языке
-- Будь кратким, но информативным`;
+  const systemPrompt = options.system_prompt || DEFAULT_SYSTEM_PROMPT;
+  const reviewPrompt = options.review_prompt || DEFAULT_REVIEW_PROMPT;
+  const finalPrompt = options.final_prompt || DEFAULT_FINAL_PROMPT;
+  const explainPrompt = options.explain_prompt || DEFAULT_EXPLAIN_PROMPT;
   
   if (!isLocalhost && !apiKey) {
     throw new Error('UNAUTHORIZED');
@@ -82,5 +58,18 @@ Do not provide feedback yet. I will follow-up with a description of the change i
     temperature
   });
   
-  return { apiKey, baseUrl, model, apiTimeout, maxTokens, temperature, systemPrompt, reviewPrompt, finalPrompt, explainPrompt };
+  return {
+    apiKey,
+    baseUrl,
+    model,
+    apiTimeout,
+    maxTokens,
+    temperature,
+    systemPrompt,
+    reviewPrompt,
+    finalPrompt,
+    explainPrompt,
+    explainDefaultQuestion: EXPLAIN_DEFAULT_QUESTION,
+    explainFollowUpSystem: EXPLAIN_FOLLOW_UP_SYSTEM
+  };
 }

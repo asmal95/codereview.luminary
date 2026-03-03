@@ -335,7 +335,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     
     if (isFirstRequest) {
       // First request: use explainPrompt template from config
-      const questionText = userQuestion ? `Дополнительный вопрос: ${userQuestion}` : '';
+      const questionText = userQuestion ? userQuestion : (config.explainDefaultQuestion || 'Explain this fragment: what it does and why.');
       systemPrompt = config.explainPrompt
         .replace(/{text}/g, this.selectedText)
         .replace(/{question}/g, questionText);
@@ -343,11 +343,12 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       console.log('[CS] First request - using explainPrompt');
       console.log('[CS] Selected text length:', this.selectedText.length);
       console.log('[CS] Selected text preview:', this.selectedText.substring(0, 100));
-      console.log('[CS] Question:', userQuestion || '(empty)');
+      console.log('[CS] Question:', userQuestion || '(default)');
     } else {
-      // Follow-up requests: use simple context reminder
-      systemPrompt = `Контекст кода:\n\n${this.selectedText}\n\nОтветь на вопрос пользователя о коде выше.`;
-      console.log('[CS] Follow-up request - using simple prompt');
+      // Follow-up: use structured reminder so model keeps same style and language
+      systemPrompt = (config.explainFollowUpSystem || `You explain code. Context:\n\n{context}\n\nAnswer the user's questions in a structured way, in Russian, concisely.`)
+        .replace(/{context}/g, this.selectedText);
+      console.log('[CS] Follow-up request - using explainFollowUpSystem');
     }
     
     console.log('[CS] System prompt length:', systemPrompt.length);
