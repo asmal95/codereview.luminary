@@ -12,6 +12,10 @@ const windowInstances = {
 
 console.log('[CS] Content script loaded on:', window.location.href);
 
+// Notify the service worker that this content script is ready to receive messages.
+// The SW awaits this signal after injecting us, instead of using a fixed delay.
+chrome.runtime.sendMessage({ action: 'contentScriptReady' }).catch(() => {});
+
 /**
  * Get or create window instance (singleton factory).
  * Reuses the same instance until DOM is removed (e.g. page unload / destroy()).
@@ -37,12 +41,12 @@ chrome.runtime.onMessage.addListener((request) => {
     console.log('[CS] Message age:', messageAge, 'ms');
     if (messageAge > 5000) {
       console.log('[CS] ❌ IGNORING stale toggleFloatingWindow message (too old)');
-      return true;
+      return false;
     }
     
     const win = getWindowInstance('review', FloatingReviewWindow);
     win.toggle();
-    return true;
+    return false;
   }
   if (request.action === 'explainText') {
     console.log('[CS] ========== EXPLAIN MESSAGE RECEIVED ==========');
@@ -55,7 +59,7 @@ chrome.runtime.onMessage.addListener((request) => {
     console.log('[CS] Message age:', messageAge, 'ms');
     if (messageAge > 5000) {
       console.log('[CS] ❌ IGNORING stale message (too old)');
-      return true;
+      return false;
     }
     
     // Reuse same explain window instance; show() updates content and makes it visible
@@ -67,9 +71,9 @@ chrome.runtime.onMessage.addListener((request) => {
     console.log('[CS] ✅ Calling win.show()');
     
     win.show(request.text);
-    return true;
+    return false;
   }
-  return true;
+  return false;
 });
 
 // Handle window resize - adjust positions if they go out of bounds

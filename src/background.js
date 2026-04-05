@@ -2,8 +2,41 @@
 
 console.log('[BG] Background script loaded');
 
-// Keep track of tabs where content script is injected
-const injectedTabs = new Set();
+// Pending resolve callbacks waiting for contentScriptReady from a specific tab.
+// Keyed by tabId; set up before executeScript so the signal is never missed.
+const readyCallbacks = new Map();
+
+/**
+ * Send a message to a tab's content script.
+ * If the content script isn't loaded yet, inject it and wait for its
+ * contentScriptReady signal before sending (1 s fallback timeout).
+ */
+async function sendToTab(tabId, payload) {
+  try {
+    await chrome.tabs.sendMessage(tabId, payload);
+    console.log('[BG] Message sent to tab', tabId);
+    return;
+  } catch (_) {
+    console.log('[BG] Content script not ready in tab', tabId, '— injecting...');
+  }
+
+  // Register the ready callback BEFORE injecting to avoid a race where the
+  // content script fires contentScriptReady before we start awaiting.
+  const readyPromise = new Promise((resolve) => {
+    const fallback = setTimeout(resolve, 1000);
+    readyCallbacks.set(tabId, () => { clearTimeout(fallback); resolve(); });
+  });
+
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await readyPromise;
+    await chrome.tabs.sendMessage(tabId, payload);
+    console.log('[BG] Message sent after injection to tab', tabId);
+  } catch (err) {
+    readyCallbacks.delete(tabId);
+    console.error('[BG] Failed to inject/send to tab', tabId, err);
+  }
+}
 
 // Create context menu for text selection
 chrome.runtime.onInstalled.addListener(() => {
@@ -40,25 +73,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const payload = { action: 'explainText', text: info.selectionText, timestamp: now };
   console.log('[BG] ✅ Sending explainText message, timestamp:', now);
 
-  try {
-    await chrome.tabs.sendMessage(tab.id, payload);
-    console.log('[BG] Message sent to content script successfully');
-  } catch (error) {
-    console.log('[BG] Failed to send message, injecting content script...');
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content.js']
-      });
-      injectedTabs.add(tab.id);
-      await new Promise(resolve => setTimeout(resolve, 100));
-      console.log('[BG] Content script injected, sending message again...');
-      await chrome.tabs.sendMessage(tab.id, payload);
-      console.log('[BG] Message sent after injection');
-    } catch (injectError) {
-      console.error('[BG] Failed to inject for explain:', injectError);
-    }
-  }
+  await sendToTab(tab.id, payload);
 });
 
 // Handle clicks on the extension icon
@@ -66,35 +81,33 @@ chrome.action.onClicked.addListener(async (tab) => {
   console.log('[BG] Extension icon clicked, tab:', tab.id);
   
   const payload = { action: 'toggleFloatingWindow', timestamp: Date.now() };
-  
-  try {
-    await chrome.tabs.sendMessage(tab.id, payload);
-    console.log('[BG] Message sent successfully');
-  } catch (error) {
-    console.log('[BG] Injecting content script...');
-    
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content.js']
-      });
-      
-      injectedTabs.add(tab.id);
-      await new Promise(resolve => setTimeout(resolve, 100));
-      await chrome.tabs.sendMessage(tab.id, payload);
-      console.log('[BG] Content script injected and message sent');
-    } catch (injectError) {
-      console.error('[BG] Failed to inject:', injectError);
-    }
-  }
+  await sendToTab(tab.id, payload);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  injectedTabs.delete(tabId);
+  readyCallbacks.delete(tabId);
+});
+
+// When the user navigates to a new URL in the same tab, any pending ready
+// callback for that tab is no longer valid (the old content script is gone).
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'loading') {
+    readyCallbacks.delete(tabId);
+  }
 });
 
 // Handle storage operations
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'contentScriptReady') {
+    const tabId = sender.tab?.id;
+    if (tabId !== undefined) {
+      console.log('[BG] contentScriptReady from tab', tabId);
+      readyCallbacks.get(tabId)?.();
+      readyCallbacks.delete(tabId);
+    }
+    return false;
+  }
+
   if (request.action === 'getApiKey') {
     chrome.storage.sync.get([
       'openai_apikey', 
