@@ -174,19 +174,46 @@ chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'streaming-api') return;
   
   console.log('[BG] Port connected for streaming API');
+
+  let activeAbortController = null;
+  let pendingUserAbort = false;
   
   port.onMessage.addListener(async (msg) => {
+    if (msg.action === 'abortStream') {
+      pendingUserAbort = true;
+      activeAbortController?.abort();
+      return;
+    }
+
     if (msg.action !== 'streamRequest') return;
     
     const { url, method, headers, body } = msg;
     console.log('[BG] Starting streaming request to:', url);
     console.log('[BG] Request body length:', body?.length);
-    
+
+    const ac = new AbortController();
+    activeAbortController = ac;
+    if (pendingUserAbort) {
+      pendingUserAbort = false;
+      ac.abort();
+    }
+
+    let reader = null;
+    let abortNotified = false;
+
+    const finishAbort = () => {
+      if (abortNotified) return;
+      abortNotified = true;
+      pendingUserAbort = false;
+      port.postMessage({ type: 'aborted' });
+    };
+
     try {
       const response = await fetch(url, {
         method: method || 'POST',
         headers: headers || {},
-        body: body || undefined
+        body: body || undefined,
+        signal: ac.signal
       });
       
       console.log('[BG] Response status:', response.status, response.statusText);
@@ -202,20 +229,39 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       
       console.log('[BG] Starting to read stream...');
-      const reader = response.body.getReader();
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let chunkCount = 0;
       let rawLineCount = 0;
       
       while (true) {
-        const { done, value } = await reader.read();
+        // Check abort signal before attempting next read (handles buffered-data race)
+        if (ac.signal.aborted) {
+          console.log('[BG] Abort signal detected before read, stopping');
+          finishAbort();
+          return;
+        }
+
+        let readResult;
+        try {
+          readResult = await reader.read();
+        } catch (readErr) {
+          if (ac.signal.aborted || readErr.name === 'AbortError') {
+            console.log('[BG] Stream read aborted');
+            finishAbort();
+            return;
+          }
+          throw readErr;
+        }
+        const { done, value } = readResult;
         
         if (done) {
           console.log('[BG] Stream read completed, total chunks sent:', chunkCount);
           if (chunkCount === 0) {
             console.warn('[BG] WARNING: No chunks were sent! Buffer remaining:', buffer.slice(0, 200));
           }
+          pendingUserAbort = false;
           port.postMessage({ type: 'done' });
           break;
         }
@@ -232,6 +278,13 @@ chrome.runtime.onConnect.addListener((port) => {
         buffer = lines.pop() || '';
         
         for (const line of lines) {
+          // Check abort inside line loop so buffered chunks don't drain after abort
+          if (ac.signal.aborted) {
+            console.log('[BG] Abort signal detected inside line loop, stopping');
+            finishAbort();
+            return;
+          }
+
           rawLineCount++;
           
           // Log first few lines to understand format
@@ -246,6 +299,7 @@ chrome.runtime.onConnect.addListener((port) => {
             const data = line.slice(6).trim();
             if (data === '[DONE]') {
               console.log('[BG] [DONE] marker received, chunks sent:', chunkCount);
+              pendingUserAbort = false;
               port.postMessage({ type: 'done' });
               return;
             }
@@ -301,12 +355,26 @@ chrome.runtime.onConnect.addListener((port) => {
         }
       }
     } catch (error) {
+      if (error.name === 'AbortError' || ac.signal.aborted) {
+        console.log('[BG] Stream aborted (fetch or signal)');
+        finishAbort();
+        return;
+      }
       console.error('[BG] Stream error:', error);
       console.error('[BG] Error stack:', error.stack);
       port.postMessage({
         type: 'error',
         error: error.message || 'Connection error'
       });
+    } finally {
+      activeAbortController = null;
+      if (reader) {
+        try {
+          await reader.cancel();
+        } catch (_) {
+          /* ignore */
+        }
+      }
     }
   });
   

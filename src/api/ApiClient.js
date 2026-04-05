@@ -9,14 +9,16 @@ export class ApiClient {
    * @param {Function} onChunk - Callback for each chunk (receives accumulated response)
    * @param {Function} onDone - Callback when done
    * @param {Function} onError - Callback on error
+   * @param {Function} [onAbort] - Callback when user stops generation (receives accumulated text)
+   * @returns {{ abort: () => void }}
    */
-  static async streamRequest(config, messages, onChunk, onDone, onError) {
+  static streamRequest(config, messages, onChunk, onDone, onError, onAbort) {
     const requestBody = {
       model: config.model,
       messages: messages,
       stream: true,
-      max_tokens: config.maxTokens || 8192,  // Configurable, default 8192
-      temperature: config.temperature !== undefined ? config.temperature : 0.7,  // Configurable, default 0.7
+      max_tokens: config.maxTokens || 8192,
+      temperature: config.temperature !== undefined ? config.temperature : 0.7,
       top_p: 1.0
     };
 
@@ -30,11 +32,27 @@ export class ApiClient {
     let fullResponse = '';
     let chunkCount = 0;
     let isCompleted = false;
-    
-    // Timeout handler
+    // Tracks that the user pressed Stop and we're waiting for background confirmation.
+    // While true: ignore incoming chunks (no UI flicker), treat 'done' as 'aborted'.
+    let isAborting = false;
+
+    const abort = () => {
+      if (isCompleted || isAborting) return;
+      isAborting = true;
+      console.log('[CS] abort() called, sending abortStream to background');
+      try {
+        port.postMessage({ action: 'abortStream' });
+      } catch (e) {
+        console.warn('[CS] abortStream failed:', e);
+      }
+    };
+
+    // Timeout handler — fires onError, not onAbort (user didn't request this)
     const timeout = setTimeout(() => {
-      if (!isCompleted) {
+      if (!isCompleted && !isAborting) {
         console.error(`[CS] Streaming timeout after ${timeoutMs}ms`);
+        isCompleted = true;
+        clearTimeout(timeout);
         port.disconnect();
         const errorMsg = fullResponse || 'Error: Request timeout. The API took too long to respond.';
         if (onError) onError(errorMsg);
@@ -42,7 +60,7 @@ export class ApiClient {
     }, timeoutMs);
 
     console.log('[CS] Sending request with', messages.length, 'messages');
-    
+
     port.postMessage({
       action: 'streamRequest',
       url,
@@ -56,12 +74,16 @@ export class ApiClient {
 
     port.onMessage.addListener((msg) => {
       console.log('[CS] Received message type:', msg.type);
-      
+
       if (msg.type === 'chunk') {
+        // Silently discard chunks that arrive after the user pressed Stop.
+        // Background might still be draining its buffer or have messages in-flight.
+        if (isAborting) return;
+
         chunkCount++;
         fullResponse += msg.content;
         if (onChunk) onChunk(fullResponse);
-        
+
         if (chunkCount === 1) {
           console.log('[CS] First chunk received, streaming started');
         }
@@ -70,40 +92,55 @@ export class ApiClient {
         }
       } else if (msg.type === 'done') {
         console.log(`[CS] Stream completed, total chunks: ${chunkCount}, response length: ${fullResponse.length}`);
-        console.log('[CS] Full response:', fullResponse);
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
-        if (onDone) onDone();
+        // Race condition: background sent 'done' before it could process 'abortStream'.
+        // Treat it as a user-requested abort so the UI reflects the Stop action.
+        if (isAborting) {
+          console.log('[CS] done received while aborting — treating as aborted');
+          if (onAbort) onAbort(fullResponse);
+        } else {
+          console.log('[CS] Full response:', fullResponse);
+          if (onDone) onDone();
+        }
+      } else if (msg.type === 'aborted') {
+        console.log('[CS] Stream aborted by user, length:', fullResponse.length);
+        isCompleted = true;
+        clearTimeout(timeout);
+        port.disconnect();
+        if (onAbort) onAbort(fullResponse);
       } else if (msg.type === 'error') {
         console.error('[CS] Stream error:', msg.error);
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
-        
+
         let errorMessage = `Error: ${msg.error}`;
         errorMessage += '\n\nTroubleshooting:\n';
         errorMessage += '- Check browser console (F12) for details\n';
         errorMessage += '- Verify your API key and settings\n';
         errorMessage += `- API URL: ${config.baseUrl}\n`;
-        
+
         if (onError) onError(errorMessage);
       }
     });
 
     port.onDisconnect.addListener(() => {
       console.log('[CS] Port disconnected, completed:', isCompleted, 'chunks:', chunkCount);
-      
+
       if (!isCompleted) {
         console.warn('[CS] Port disconnected before completion!');
         clearTimeout(timeout);
-        
-        const errorMsg = fullResponse 
+
+        const errorMsg = fullResponse
           ? fullResponse + '\n\n[Warning: Connection lost, showing partial response]'
           : 'Error: Connection lost before receiving any data. Check background script console.';
-        
+
         if (onError) onError(errorMsg);
       }
     });
+
+    return { abort };
   }
 }

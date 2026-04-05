@@ -25,21 +25,24 @@ What to look for (highest priority first):
 
 Important constraints:
 - Only comment on lines that were actually changed (+ or - in the diff). Ignore unchanged context lines.
-- Only raise an issue if you are confident it is a real problem. Do not comment on every changed file.
+- High bar: only report an issue if you are confident it would cause a real bug, security breach, or runtime failure in production. Doubt = skip.
 - Skip style, naming, and cosmetic issues entirely.`;
 
 export const DEFAULT_FINAL_PROMPT = `All diffs received. Write the review now.
 
-Include only sections that have real findings:
-**Критично (блокер):** — bugs, security, data loss, race conditions (must fix before merge)
-**Важно:** — design flaws, missing error handling, antipatterns
-**Незначительно:** — optional improvements
+Allowed sections (use only the ones that have findings):
+- **Критично (блокер):** bugs, security, data loss, race conditions
+- **Важно:** design flaws, missing error handling, antipatterns
+- **Незначительно:** optional improvements
 
-Each finding is one bullet: \`ClassName.java:NN\` — what is wrong → how to fix it.
-No introductory text. Do not summarize the PR.
+Rules:
+- Do NOT write a section heading unless you have at least one bullet to place under it.
+- Each finding is one bullet: \`ClassName.java:NN\` — what is wrong → how to fix.
+- Each finding appears exactly once. Do not repeat the same issue.
+- No intro text. Do not summarize the PR.
 
-If you found zero issues across all three sections, write exactly: "Замечаний нет. Можно мержить."
-Failure mode to avoid: do NOT write "Замечаний нет" when you have already listed findings above.`;
+If you have zero findings total: write only "Замечаний нет. Можно мержить."
+Failure mode: do NOT write "Замечаний нет" if you already wrote findings above.`;
 
 /**
  * System prompt for the Explain window (first request).

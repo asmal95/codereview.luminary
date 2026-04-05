@@ -6,12 +6,20 @@ import { spinner, checkmark, xcircle } from '../utils/constants.js';
 const showdown = require('showdown');
 const parsediff = require('parse-diff');
 
-const converter = new showdown.Converter();
+const converter = new showdown.Converter({
+  tables: true,
+  strikethrough: true,
+  tasklists: true,
+  ghCodeBlocks: true,
+  smoothLivePreview: true,
+  openLinksInNewWindow: true,
+});
 
 export class FloatingReviewWindow extends BaseFloatingWindow {
   constructor() {
     super('codereview-floating-window', '');
     this.isReviewing = false; // Prevent duplicate reviews
+    this._abortReviewStream = null;
     this.createWindow(768, 768);
     this.loadState();
   }
@@ -42,6 +50,9 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
         <div class="codereview-content">
           <div class="codereview-header-info">
             <div class="codereview-header-row">
+              <button type="button" id="review-stop-btn" class="codereview-rerun-btn" style="display: none;" title="Остановить генерацию">
+                Стоп
+              </button>
               <div id="rerun-btn" class="codereview-rerun-btn" style="display: none;">
                 run again
               </div>
@@ -65,6 +76,15 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     super.attachEventListeners();
 
     // Run again button - force new review by clearing cache first
+    const stopBtn = this.window.querySelector('#review-stop-btn');
+    if (stopBtn) {
+      stopBtn.addEventListener('click', () => {
+        if (this._abortReviewStream) {
+          this._abortReviewStream();
+        }
+      });
+    }
+
     const rerunBtn = this.window.querySelector('#rerun-btn');
     if (rerunBtn) {
       rerunBtn.addEventListener('click', async () => {
@@ -100,6 +120,13 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     return null;
   }
 
+  setReviewStopVisible(visible) {
+    const stopBtn = this.window?.querySelector('#review-stop-btn');
+    if (stopBtn) {
+      stopBtn.style.display = visible ? 'inline-block' : 'none';
+    }
+  }
+
   setStatus(ongoing, failed = false, rerun = true) {
     const statusIcon = this.window.querySelector('#status-icon');
     const rerunBtn = this.window.querySelector('#rerun-btn');
@@ -107,11 +134,13 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     if (ongoing) {
       statusIcon.innerHTML = spinner;
       rerunBtn.style.display = 'none';
+      this.setReviewStopVisible(false);
     } else {
       statusIcon.innerHTML = failed ? xcircle : checkmark;
       if (rerun) {
         rerunBtn.style.display = 'block';
       }
+      this.setReviewStopVisible(false);
     }
   }
 
@@ -238,7 +267,10 @@ Do not respond yet. I will send the code changes in diff format next.`);
     console.log('[CS] System prompt:', config.systemPrompt);
     console.log('[CS] Final prompt:', config.finalPrompt);
     
-    await ApiClient.streamRequest(
+    this._abortReviewStream = null;
+    this.setReviewStopVisible(true);
+
+    const { abort } = ApiClient.streamRequest(
       config,
       apiMessages,
       (answer) => {
@@ -247,6 +279,8 @@ Do not respond yet. I will send the code changes in diff format next.`);
       },
       () => {
         console.log('[CS] Review completed, final length:', resultDiv.textContent.length);
+        this._abortReviewStream = null;
+        this.setReviewStopVisible(false);
         chrome.storage.session.set({ [diffPath]: resultDiv.innerHTML })
           .catch(() => chrome.runtime.sendMessage({ 
             action: 'setCache', 
@@ -259,10 +293,26 @@ Do not respond yet. I will send the code changes in diff format next.`);
       },
       (error) => {
         console.error('[CS] Review error:', error);
+        this._abortReviewStream = null;
+        this.setReviewStopVisible(false);
         resultDiv.innerHTML = converter.makeHtml(error);
         this.setStatus(false, true, true);
+      },
+      (partial) => {
+        this._abortReviewStream = null;
+        this.setReviewStopVisible(false);
+        const text = partial && partial.trim() ? partial : '';
+        if (text) {
+          resultDiv.innerHTML =
+            converter.makeHtml(text + ' \n\n' + warning) +
+            '<p><em>Генерация остановлена.</em></p>';
+        } else {
+          resultDiv.innerHTML = '<p><em>Генерация остановлена.</em></p>';
+        }
+        this.setStatus(false, false, true);
       }
     );
+    this._abortReviewStream = abort;
   }
 
   async runReview() {

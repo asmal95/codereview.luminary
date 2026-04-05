@@ -4,7 +4,14 @@ import { getConfig } from '../utils/config.js';
 import { spinner, checkmark, xcircle } from '../utils/constants.js';
 
 const showdown = require('showdown');
-const converter = new showdown.Converter();
+const converter = new showdown.Converter({
+  tables: true,
+  strikethrough: true,
+  tasklists: true,
+  ghCodeBlocks: true,
+  smoothLivePreview: true,
+  openLinksInNewWindow: true,
+});
 
 export class FloatingExplainWindow extends BaseFloatingWindow {
   constructor() {
@@ -14,6 +21,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     this.state = 'IDLE'; // IDLE | LOADING | STREAMING | COMPLETED | ERROR
     this.lastResult = '';
     this.streamRequestId = 0;
+    this._abortExplainStream = null;
     this.lastHideTime = 0; // Track when window was closed
     this.wasHidden = true; // Track if window was hidden (should clear history on show)
     this.createWindow(600, 600);
@@ -81,9 +89,13 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     const questionInput = this.window.querySelector('#explain-question-input');
     const contextHeader = this.window.querySelector('#context-header');
 
-    // Submit button
+    // Submit / stop button
     if (submitBtn) {
       submitBtn.addEventListener('click', () => {
+        if (this.state === 'STREAMING' && this._abortExplainStream) {
+          this._abortExplainStream();
+          return;
+        }
         this.explainText();
       });
     }
@@ -93,6 +105,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       questionInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
+          if (this.state === 'LOADING' || this.state === 'STREAMING') return;
           this.explainText();
         }
       });
@@ -383,8 +396,13 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     
     try {
       this.state = 'STREAMING';
-      
-      await ApiClient.streamRequest(
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        this.setSubmitStopAppearance(submitBtn);
+      }
+
+      this._abortExplainStream = null;
+      const { abort } = ApiClient.streamRequest(
         config,
         apiMessages,
         // onChunk - receives full accumulated response, not just the new chunk
@@ -402,6 +420,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
           if (!this.window) return;
           
           this.state = 'COMPLETED';
+          this._abortExplainStream = null;
           
           // Add assistant message to history
           this.messages.push({ role: 'assistant', content: fullResponse });
@@ -411,9 +430,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
             assistantElement.classList.remove('streaming');
           }
           
-          // Re-enable button
           if (submitBtn) {
-            submitBtn.disabled = false;
             this.resetSubmitButton(submitBtn);
           }
         },
@@ -423,6 +440,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
           if (!this.window || !assistantElement) return;
           
           this.state = 'ERROR';
+          this._abortExplainStream = null;
           
           const errorText = `Ошибка: ${error}`;
           
@@ -438,16 +456,43 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
           assistantElement.classList.remove('streaming');
           this.scrollToBottom();
           
-          // Re-enable button
           if (submitBtn) {
-            submitBtn.disabled = false;
+            this.resetSubmitButton(submitBtn);
+          }
+        },
+        // onAbort — user stopped generation
+        (partial) => {
+          if (currentRequestId !== this.streamRequestId) return;
+          if (!this.window) return;
+          
+          this.state = 'COMPLETED';
+          this._abortExplainStream = null;
+          const saved =
+            partial !== undefined && partial !== null ? partial : fullResponse;
+
+          if (assistantElement) {
+            assistantElement.classList.remove('streaming');
+            if (saved.trim()) {
+              this.messages.push({ role: 'assistant', content: saved });
+              assistantElement.innerHTML = converter.makeHtml(
+                saved + '\n\n*Генерация остановлена.*'
+              );
+            } else {
+              assistantElement.remove();
+            }
+            this.scrollToBottom();
+          }
+
+          if (submitBtn) {
             this.resetSubmitButton(submitBtn);
           }
         }
       );
+      this._abortExplainStream = abort;
     } catch (error) {
       console.error('[CS] Unexpected error in explainText:', error);
       this.state = 'ERROR';
+      this._abortExplainStream = null;
       
       if (assistantElement) {
         const errorText = `Ошибка: ${error.message || error}`;
@@ -465,15 +510,26 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       }
       
       if (submitBtn) {
-        submitBtn.disabled = false;
         this.resetSubmitButton(submitBtn);
       }
     }
   }
 
+  setSubmitStopAppearance(submitBtn) {
+    if (!submitBtn) return;
+    submitBtn.classList.add('codereview-explain-btn-stop');
+    submitBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-4 h-4">
+        <rect x="6" y="6" width="12" height="12" rx="2"/>
+      </svg>
+      Стоп
+    `;
+  }
+
   resetSubmitButton(submitBtn) {
     if (submitBtn) {
       submitBtn.disabled = false;
+      submitBtn.classList.remove('codereview-explain-btn-stop');
       submitBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
