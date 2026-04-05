@@ -334,11 +334,10 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     let systemPrompt;
     
     if (isFirstRequest) {
-      // First request: use explainPrompt template from config
-      const questionText = userQuestion ? userQuestion : (config.explainDefaultQuestion || 'Explain this fragment: what it does and why.');
+      // First request: system prompt contains only the selected code context.
+      // The user's question is sent as a separate user message below (no {question} here).
       systemPrompt = config.explainPrompt
-        .replace(/{text}/g, this.selectedText)
-        .replace(/{question}/g, questionText);
+        .replace(/{text}/g, this.selectedText);
       
       console.log('[CS] First request - using explainPrompt');
       console.log('[CS] Selected text length:', this.selectedText.length);
@@ -346,7 +345,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       console.log('[CS] Question:', userQuestion || '(default)');
     } else {
       // Follow-up: use structured reminder so model keeps same style and language
-      systemPrompt = (config.explainFollowUpSystem || `You explain code. Context:\n\n{context}\n\nAnswer the user's questions in a structured way, in Russian, concisely.`)
+      systemPrompt = (config.explainFollowUpSystem || `You explain code. Context:\n\n{context}\n\nAnswer the user's questions concisely, in Russian.`)
         .replace(/{context}/g, this.selectedText);
       console.log('[CS] Follow-up request - using explainFollowUpSystem');
     }
@@ -354,11 +353,17 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     console.log('[CS] System prompt length:', systemPrompt.length);
     console.log('[CS] System prompt preview:', systemPrompt.substring(0, 200));
     
-    // Build API messages
+    // Build API messages.
+    // For a first request with empty input the user message array is empty, so we inject
+    // the default question directly into the API payload (without rendering it in the UI).
     const apiMessages = [
       { role: 'system', content: systemPrompt },
       ...this.messages.map(m => ({ role: m.role, content: m.content }))
     ];
+    if (isFirstRequest && !userQuestion) {
+      const defaultQ = config.explainDefaultQuestion || 'Explain this fragment: what it does and why.';
+      apiMessages.push({ role: 'user', content: defaultQ });
+    }
     
     console.log('[CS] Total API messages:', apiMessages.length);
     console.log('[CS] API messages:', apiMessages.map(m => ({ role: m.role, length: m.content.length })));
