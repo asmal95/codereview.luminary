@@ -2,6 +2,8 @@ import { BaseFloatingWindow } from './BaseFloatingWindow.js';
 import { ApiClient } from '../api/ApiClient.js';
 import { getConfig } from '../utils/config.js';
 import { spinner, checkmark, xcircle } from '../utils/constants.js';
+import { logger } from '../utils/logger.js';
+import DOMPurify from 'dompurify';
 
 const showdown = require('showdown');
 const parsediff = require('parse-diff');
@@ -14,6 +16,10 @@ const converter = new showdown.Converter({
   smoothLivePreview: true,
   openLinksInNewWindow: true,
 });
+
+function renderMarkdown(text) {
+  return DOMPurify.sanitize(converter.makeHtml(text));
+}
 
 export class FloatingReviewWindow extends BaseFloatingWindow {
   constructor() {
@@ -75,7 +81,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
   attachEventListeners() {
     super.attachEventListeners();
 
-    // Run again button - force new review by clearing cache first
+    // Stop button
     const stopBtn = this.window.querySelector('#review-stop-btn');
     if (stopBtn) {
       stopBtn.addEventListener('click', () => {
@@ -164,8 +170,8 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     try {
       config = await getConfig();
     } catch (e) {
-      console.error('[CS] Failed to get config for prompts:', e);
-      resultDiv.innerHTML = 'Error: Failed to load configuration. Please check extension settings.';
+      logger.error('[CS] Failed to get config for prompts:', e);
+      resultDiv.textContent = 'Error: Failed to load configuration. Please check extension settings.';
       this.setStatus(false, true, false);
       return;
     }
@@ -175,7 +181,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     
     // Fetch patch via background script to avoid CORS issues
     try {
-      console.log('[CS] Fetching patch from:', diffPath);
+      logger.log('[CS] Fetching patch from:', diffPath);
       const patchResponse = await chrome.runtime.sendMessage({ 
         action: 'fetchPatch', 
         url: diffPath 
@@ -183,17 +189,17 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
       
       if (!patchResponse || !patchResponse.success) {
         const errorMsg = patchResponse?.error || 'Unknown error';
-        console.error('[CS] Failed to fetch patch:', errorMsg);
-        resultDiv.innerHTML = `Error: Failed to fetch patch file.<br><br>${errorMsg}<br><br>Please check if the URL is correct: ${diffPath}`;
+        logger.error('[CS] Failed to fetch patch:', errorMsg);
+        resultDiv.textContent = `Error: Failed to fetch patch file.\n\n${errorMsg}\n\nPlease check if the URL is correct: ${diffPath}`;
         this.setStatus(false, true, false);
         return;
       }
       
       patch = patchResponse.data;
-      console.log('[CS] Patch fetched successfully, length:', patch.length);
+      logger.log('[CS] Patch fetched successfully, length:', patch.length);
     } catch (error) {
-      console.error('[CS] Exception while fetching patch:', error);
-      resultDiv.innerHTML = `Error: Failed to fetch patch file.<br><br>${error.message}<br><br>Please check if the URL is correct: ${diffPath}`;
+      logger.error('[CS] Exception while fetching patch:', error);
+      resultDiv.textContent = `Error: Failed to fetch patch file.\n\n${error.message}\n\nPlease check if the URL is correct: ${diffPath}`;
       this.setStatus(false, true, false);
       return;
     }
@@ -201,11 +207,9 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     let warning = '';
     let patchParts = [];
 
-    // Use custom review prompt with variable substitution
     const reviewPromptWithVars = config.reviewPrompt.replace(/{title}/g, title);
     promptArray.push(reviewPromptWithVars);
 
-    // Add context description (do not respond yet — diffs follow)
     promptArray.push(`A description to help you understand why these changes were made (markdown):
 
 ${context}
@@ -255,17 +259,13 @@ Do not respond yet. I will send the code changes in diff format next.`);
       promptArray.push(part);
     });
 
-    // Use custom final prompt
     promptArray.push(config.finalPrompt);
 
-    // Build API messages
     const systemMessage = { role: 'system', content: config.systemPrompt };
     const userMessages = promptArray.map(msg => ({ role: 'user', content: msg }));
     const apiMessages = [systemMessage, ...userMessages];
 
-    console.log('[CS] Sending review request with', apiMessages.length, 'messages');
-    console.log('[CS] System prompt:', config.systemPrompt);
-    console.log('[CS] Final prompt:', config.finalPrompt);
+    logger.log('[CS] Sending review request with', apiMessages.length, 'messages');
     
     this._abortReviewStream = null;
     this.setReviewStopVisible(true);
@@ -274,11 +274,11 @@ Do not respond yet. I will send the code changes in diff format next.`);
       config,
       apiMessages,
       (answer) => {
-        console.log('[CS] Review answer length:', answer.length);
-        resultDiv.innerHTML = converter.makeHtml(answer + ' \n\n' + warning);
+        logger.log('[CS] Review answer length:', answer.length);
+        resultDiv.innerHTML = renderMarkdown(answer + ' \n\n' + warning);
       },
       () => {
-        console.log('[CS] Review completed, final length:', resultDiv.textContent.length);
+        logger.log('[CS] Review completed, final length:', resultDiv.textContent.length);
         this._abortReviewStream = null;
         this.setReviewStopVisible(false);
         chrome.storage.session.set({ [diffPath]: resultDiv.innerHTML })
@@ -292,10 +292,10 @@ Do not respond yet. I will send the code changes in diff format next.`);
         this.setStatus(false);
       },
       (error) => {
-        console.error('[CS] Review error:', error);
+        logger.error('[CS] Review error:', error);
         this._abortReviewStream = null;
         this.setReviewStopVisible(false);
-        resultDiv.innerHTML = converter.makeHtml(error);
+        resultDiv.innerHTML = renderMarkdown(error);
         this.setStatus(false, true, true);
       },
       (partial) => {
@@ -304,7 +304,7 @@ Do not respond yet. I will send the code changes in diff format next.`);
         const text = partial && partial.trim() ? partial : '';
         if (text) {
           resultDiv.innerHTML =
-            converter.makeHtml(text + ' \n\n' + warning) +
+            renderMarkdown(text + ' \n\n' + warning) +
             '<p><em>Генерация остановлена.</em></p>';
         } else {
           resultDiv.innerHTML = '<p><em>Генерация остановлена.</em></p>';
@@ -318,11 +318,11 @@ Do not respond yet. I will send the code changes in diff format next.`);
   async runReview() {
     // Prevent duplicate reviews
     if (this.isReviewing) {
-      console.log('[FloatingReview] Review already in progress, ignoring duplicate call');
+      logger.log('[FloatingReview] Review already in progress, ignoring duplicate call');
       return;
     }
     
-    console.log('[FloatingReview] Starting review...');
+    logger.log('[FloatingReview] Starting review...');
     this.isReviewing = true;
     
     try {
@@ -370,7 +370,7 @@ Do not respond yet. I will send the code changes in diff format next.`);
       const resultDiv = this.window.querySelector('#result');
       
       if (error != null) {
-        resultDiv.innerHTML = error;
+        resultDiv.textContent = error;
         this.setStatus(false, true, false);
         return;
       }
@@ -407,7 +407,7 @@ Do not respond yet. I will send the code changes in diff format next.`);
         });
     } finally {
       this.isReviewing = false;
-      console.log('[FloatingReview] Review completed/finished');
+      logger.log('[FloatingReview] Review completed/finished');
     }
   }
 }

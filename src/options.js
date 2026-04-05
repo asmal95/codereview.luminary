@@ -17,6 +17,7 @@ const saveOptions = () => {
     const review_prompt = document.getElementById('review_prompt').value.trim();
     const final_prompt = document.getElementById('final_prompt').value.trim();
     const explain_prompt = document.getElementById('explain_prompt').value.trim();
+    const debug_mode = document.getElementById('debug_mode').checked;
   
     // Save to chrome.storage.sync
     chrome.storage.sync.set(
@@ -30,7 +31,8 @@ const saveOptions = () => {
         system_prompt: system_prompt || undefined,
         review_prompt: review_prompt || undefined,
         final_prompt: final_prompt || undefined,
-        explain_prompt: explain_prompt || undefined
+        explain_prompt: explain_prompt || undefined,
+        debug_mode: debug_mode
       },
       () => {
         // Update status to let user know options were saved.
@@ -57,7 +59,8 @@ const saveOptions = () => {
         system_prompt: DEFAULT_SYSTEM_PROMPT,
         review_prompt: DEFAULT_REVIEW_PROMPT,
         final_prompt: DEFAULT_FINAL_PROMPT,
-        explain_prompt: DEFAULT_EXPLAIN_PROMPT
+        explain_prompt: DEFAULT_EXPLAIN_PROMPT,
+        debug_mode: false
       },
       (items) => {
         document.getElementById('openai_apikey').value = items.openai_apikey;
@@ -70,6 +73,7 @@ const saveOptions = () => {
         document.getElementById('review_prompt').value = items.review_prompt || DEFAULT_REVIEW_PROMPT;
         document.getElementById('final_prompt').value = items.final_prompt || DEFAULT_FINAL_PROMPT;
         document.getElementById('explain_prompt').value = items.explain_prompt || DEFAULT_EXPLAIN_PROMPT;
+        document.getElementById('debug_mode').checked = items.debug_mode === true;
       }
     );
   };

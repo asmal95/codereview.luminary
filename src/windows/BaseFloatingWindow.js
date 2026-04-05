@@ -1,4 +1,5 @@
 import { MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, MIN_VISIBLE_MARGIN, EDGE_MARGIN } from '../utils/constants.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Base class for floating windows with drag, resize, and minimize functionality
@@ -43,7 +44,7 @@ export class BaseFloatingWindow {
     let existingWindow = document.getElementById(this.windowId);
     
     if (existingWindow) {
-      console.log(`[CS] Reusing existing window: ${this.windowId}`);
+      logger.log(`[CS] Reusing existing window: ${this.windowId}`);
       this.window = existingWindow;
       // Reset any stuck states
       this.window.classList.remove('codereview-minimized');
@@ -51,7 +52,7 @@ export class BaseFloatingWindow {
       return; // Don't recreate, just reuse
     }
     
-    console.log(`[CS] Creating new window: ${this.windowId}`);
+    logger.log(`[CS] Creating new window: ${this.windowId}`);
     const windowDiv = document.createElement('div');
     windowDiv.id = this.windowId;
     windowDiv.className = `codereview-floating-window ${this.className}`.trim();
@@ -260,7 +261,7 @@ export class BaseFloatingWindow {
     
     // Always center if position/size is invalid or default
     if ((currentLeft === 0 && currentTop === 0) || currentWidth < 400 || currentHeight < 300) {
-      console.log(`[CS] Centering window ${this.windowId} - invalid position or size`);
+      logger.log(`[CS] Centering window ${this.windowId} - invalid position or size`);
       this.centerWindow();
     } else {
       const safe = this.ensureWindowInBounds({
@@ -291,7 +292,7 @@ export class BaseFloatingWindow {
    */
   destroy() {
     if (this.window && this.window.parentNode) {
-      console.log(`[CS] Destroying window: ${this.windowId}`);
+      logger.log(`[CS] Destroying window: ${this.windowId}`);
       this.window.parentNode.removeChild(this.window);
       this.window = null;
     }
@@ -302,7 +303,7 @@ export class BaseFloatingWindow {
    */
   ensureInDocument() {
     if (this.window && !document.contains(this.window)) {
-      console.log(`[CS] Window ${this.windowId} was removed, re-appending`);
+      logger.log(`[CS] Window ${this.windowId} was removed, re-appending`);
       document.body.appendChild(this.window);
     }
   }
@@ -360,7 +361,7 @@ export class BaseFloatingWindow {
           this.window.style.height = `${safeState.height}px`;
           
           hasValidState = true;
-          console.log(`[CS] Loaded window state: ${safeState.width}x${safeState.height} at ${safeState.left},${safeState.top}`);
+          logger.log(`[CS] Loaded window state: ${safeState.width}x${safeState.height} at ${safeState.left},${safeState.top}`);
           
           // Don't restore minimized state - always open fully
           this.isMinimized = false;
@@ -372,7 +373,7 @@ export class BaseFloatingWindow {
     }
     
     if (!hasValidState) {
-      console.log(`[CS] No valid state, centering window ${this.windowId}`);
+      logger.log(`[CS] No valid state, centering window ${this.windowId}`);
       this.centerWindow();
     }
     

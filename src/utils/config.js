@@ -23,7 +23,8 @@ export async function getConfig() {
         'system_prompt',
         'review_prompt',
         'final_prompt',
-        'explain_prompt'
+        'explain_prompt',
+        'debug_mode'
       ], resolve);
     });
   } catch (e) {
@@ -44,19 +45,11 @@ export async function getConfig() {
   const reviewPrompt = options.review_prompt || DEFAULT_REVIEW_PROMPT;
   const finalPrompt = options.final_prompt || DEFAULT_FINAL_PROMPT;
   const explainPrompt = options.explain_prompt || DEFAULT_EXPLAIN_PROMPT;
+  const debugMode = options.debug_mode === true;
   
   if (!isLocalhost && !apiKey) {
     throw new Error('UNAUTHORIZED');
   }
-  
-  console.log('[CS] Config loaded:', {
-    apiKey: isLocalhost ? 'dummy' : `***${apiKey.slice(-4)}`,
-    baseUrl,
-    model,
-    apiTimeout: `${apiTimeout}ms`,
-    maxTokens,
-    temperature
-  });
   
   return {
     apiKey,
@@ -70,6 +63,7 @@ export async function getConfig() {
     finalPrompt,
     explainPrompt,
     explainDefaultQuestion: EXPLAIN_DEFAULT_QUESTION,
-    explainFollowUpSystem: EXPLAIN_FOLLOW_UP_SYSTEM
+    explainFollowUpSystem: EXPLAIN_FOLLOW_UP_SYSTEM,
+    debugMode
   };
 }

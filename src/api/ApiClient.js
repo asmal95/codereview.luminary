@@ -1,3 +1,5 @@
+import { logger } from '../utils/logger.js';
+
 /**
  * API Client for streaming requests via Chrome Runtime Ports
  */
@@ -24,9 +26,9 @@ export class ApiClient {
 
     const url = `${config.baseUrl}/chat/completions`;
     const timeoutMs = config.apiTimeout || 300000; // Default 5 minutes
-    console.log('[CS] Starting streaming request to:', url, `timeout: ${timeoutMs}ms`);
-    console.log('[CS] Request body:', requestBody);
-    console.log('[CS] Messages summary:', messages.map(m => ({ role: m.role, length: m.content.length })));
+    logger.log('[CS] Starting streaming request to:', url, `timeout: ${timeoutMs}ms`);
+    logger.log('[CS] Request body:', requestBody);
+    logger.log('[CS] Messages summary:', messages.map(m => ({ role: m.role, length: m.content.length })));
 
     const port = chrome.runtime.connect({ name: 'streaming-api' });
     let fullResponse = '';
@@ -39,18 +41,18 @@ export class ApiClient {
     const abort = () => {
       if (isCompleted || isAborting) return;
       isAborting = true;
-      console.log('[CS] abort() called, sending abortStream to background');
+      logger.log('[CS] abort() called, sending abortStream to background');
       try {
         port.postMessage({ action: 'abortStream' });
       } catch (e) {
-        console.warn('[CS] abortStream failed:', e);
+        logger.warn('[CS] abortStream failed:', e);
       }
     };
 
     // Timeout handler — fires onError, not onAbort (user didn't request this)
     const timeout = setTimeout(() => {
       if (!isCompleted && !isAborting) {
-        console.error(`[CS] Streaming timeout after ${timeoutMs}ms`);
+        logger.error(`[CS] Streaming timeout after ${timeoutMs}ms`);
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
@@ -59,7 +61,7 @@ export class ApiClient {
       }
     }, timeoutMs);
 
-    console.log('[CS] Sending request with', messages.length, 'messages');
+    logger.log('[CS] Sending request with', messages.length, 'messages');
 
     port.postMessage({
       action: 'streamRequest',
@@ -73,7 +75,7 @@ export class ApiClient {
     });
 
     port.onMessage.addListener((msg) => {
-      console.log('[CS] Received message type:', msg.type);
+      logger.log('[CS] Received message type:', msg.type);
 
       if (msg.type === 'chunk') {
         // Silently discard chunks that arrive after the user pressed Stop.
@@ -85,33 +87,32 @@ export class ApiClient {
         if (onChunk) onChunk(fullResponse);
 
         if (chunkCount === 1) {
-          console.log('[CS] First chunk received, streaming started');
+          logger.log('[CS] First chunk received, streaming started');
         }
         if (chunkCount % 10 === 0) {
-          console.log(`[CS] Received ${chunkCount} chunks, length: ${fullResponse.length}`);
+          logger.log(`[CS] Received ${chunkCount} chunks, length: ${fullResponse.length}`);
         }
       } else if (msg.type === 'done') {
-        console.log(`[CS] Stream completed, total chunks: ${chunkCount}, response length: ${fullResponse.length}`);
+        logger.log(`[CS] Stream completed, total chunks: ${chunkCount}, response length: ${fullResponse.length}`);
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
         // Race condition: background sent 'done' before it could process 'abortStream'.
         // Treat it as a user-requested abort so the UI reflects the Stop action.
         if (isAborting) {
-          console.log('[CS] done received while aborting — treating as aborted');
+          logger.log('[CS] done received while aborting — treating as aborted');
           if (onAbort) onAbort(fullResponse);
         } else {
-          console.log('[CS] Full response:', fullResponse);
           if (onDone) onDone();
         }
       } else if (msg.type === 'aborted') {
-        console.log('[CS] Stream aborted by user, length:', fullResponse.length);
+        logger.log('[CS] Stream aborted by user, length:', fullResponse.length);
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
         if (onAbort) onAbort(fullResponse);
       } else if (msg.type === 'error') {
-        console.error('[CS] Stream error:', msg.error);
+        logger.error('[CS] Stream error:', msg.error);
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
@@ -127,10 +128,10 @@ export class ApiClient {
     });
 
     port.onDisconnect.addListener(() => {
-      console.log('[CS] Port disconnected, completed:', isCompleted, 'chunks:', chunkCount);
+      logger.log('[CS] Port disconnected, completed:', isCompleted, 'chunks:', chunkCount);
 
       if (!isCompleted) {
-        console.warn('[CS] Port disconnected before completion!');
+        logger.warn('[CS] Port disconnected before completion!');
         clearTimeout(timeout);
 
         const errorMsg = fullResponse
