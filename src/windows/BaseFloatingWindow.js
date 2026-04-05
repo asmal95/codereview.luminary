@@ -127,6 +127,13 @@ export class BaseFloatingWindow {
         this.stopResizing();
       }
     });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.window.style.display !== 'none') {
+        this.hide();
+      }
+    });
   }
 
   startDragging(e) {

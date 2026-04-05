@@ -265,6 +265,15 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     
     console.log('[FloatingExplain] Calling super.show()');
     super.show();
+
+    // Focus input so the user can start typing immediately
+    if (this.state !== 'LOADING') {
+      const questionInput = this.window?.querySelector('#explain-question-input');
+      if (questionInput) {
+        // requestAnimationFrame ensures the window is visible before focus() fires
+        requestAnimationFrame(() => questionInput.focus());
+      }
+    }
   }
   
   hide() {
