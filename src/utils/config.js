@@ -39,7 +39,7 @@ export async function getConfig() {
   const model = options.model || 'gpt-3.5-turbo';
   const apiTimeout = (options.api_timeout || 300) * 1000; // Convert seconds to milliseconds
   const maxTokens = parseInt(options.max_tokens) || 8192; // Default 8192 tokens for responses
-  const temperature = options.temperature !== undefined ? parseFloat(options.temperature) : 0.7; // Default 0.7
+  const temperature = options.temperature !== undefined ? parseFloat(options.temperature) : 0.1; // Low temperature for deterministic code analysis
   
   const systemPrompt = options.system_prompt || DEFAULT_SYSTEM_PROMPT;
   const reviewPrompt = options.review_prompt || DEFAULT_REVIEW_PROMPT;

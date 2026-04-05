@@ -120,7 +120,8 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     if (tokens[2] === 'github.com' && tokens[5] === 'pull') {
       return `https://patch-diff.githubusercontent.com/raw/${tokens[3]}/${tokens[4]}/pull/${tokens[6]}.patch`;
     } else if (url.includes('/-/merge_requests/')) {
-      return url + '.diff';
+      const { origin, pathname } = new URL(url);
+      return origin + pathname + '.diff';
     }
     
     return null;
@@ -353,7 +354,8 @@ Do not respond yet. I will send the code changes in diff format next.`);
         context = element.textContent;
       }
     } else if (provider === 'GitLab' && window.location.href.includes('/-/merge_requests/')) {
-      diffPath = window.location.href + '.diff';
+      const { origin, pathname } = window.location;
+      diffPath = origin + pathname + '.diff';
       
       const element = document.querySelector('.description textarea');
       if (element) {

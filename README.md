@@ -45,7 +45,7 @@ Available parameters:
   - Lower values: shorter responses, better reliability
   - Higher values: longer responses, may cause errors with some providers
   - Recommended: 4096-8192 for most use cases
-- **Temperature** - Creativity level (0.0-2.0, default: 0.7)
+- **Temperature** - Creativity level (0.0-2.0, default: 0.1)
   - 0.0: Focused and deterministic
   - 1.0: More creative and varied
 - **Prompts** - Customize system instructions, review format, and explanation style
