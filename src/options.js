@@ -18,10 +18,10 @@ const saveOptions = () => {
     const final_prompt = document.getElementById('final_prompt').value.trim();
     const explain_prompt = document.getElementById('explain_prompt').value.trim();
     const debug_mode = document.getElementById('debug_mode').checked;
-  
+
     // Save to chrome.storage.sync
     chrome.storage.sync.set(
-      { 
+      {
         openai_apikey: openai_apikey,
         api_base_url: api_base_url || undefined,
         model: model || undefined,
@@ -44,18 +44,18 @@ const saveOptions = () => {
       }
     );
   };
-  
+
   // Restores select box and checkbox state using the preferences
   // stored in chrome.storage.
   const restoreOptions = () => {
     chrome.storage.sync.get(
-      { 
-        openai_apikey: '', 
-        api_base_url: '', 
+      {
+        openai_apikey: '',
+        api_base_url: '',
         model: '',
         api_timeout: 300,
         max_tokens: 8192,
-        temperature: 0.7,
+        temperature: 0.1,
         system_prompt: DEFAULT_SYSTEM_PROMPT,
         review_prompt: DEFAULT_REVIEW_PROMPT,
         final_prompt: DEFAULT_FINAL_PROMPT,
@@ -68,7 +68,7 @@ const saveOptions = () => {
         document.getElementById('model').value = items.model || '';
         document.getElementById('api_timeout').value = items.api_timeout || 300;
         document.getElementById('max_tokens').value = items.max_tokens || 8192;
-        document.getElementById('temperature').value = items.temperature !== undefined ? items.temperature : 0.7;
+        document.getElementById('temperature').value = items.temperature !== undefined ? items.temperature : 0.1;
         document.getElementById('system_prompt').value = items.system_prompt || DEFAULT_SYSTEM_PROMPT;
         document.getElementById('review_prompt').value = items.review_prompt || DEFAULT_REVIEW_PROMPT;
         document.getElementById('final_prompt').value = items.final_prompt || DEFAULT_FINAL_PROMPT;
@@ -84,7 +84,7 @@ const saveOptions = () => {
     document.getElementById('review_prompt').value = DEFAULT_REVIEW_PROMPT;
     document.getElementById('final_prompt').value = DEFAULT_FINAL_PROMPT;
     document.getElementById('explain_prompt').value = DEFAULT_EXPLAIN_PROMPT;
-    
+
     const status = document.getElementById('status');
     status.textContent = 'Prompts reset to default. Click Save to apply.';
     status.style.color = 'orange';
@@ -93,7 +93,7 @@ const saveOptions = () => {
       status.style.color = 'green';
     }, 2000);
   };
-  
+
   document.addEventListener('DOMContentLoaded', restoreOptions);
   document.getElementById('save').addEventListener('click', saveOptions);
   document.getElementById('reset').addEventListener('click', resetPrompts);

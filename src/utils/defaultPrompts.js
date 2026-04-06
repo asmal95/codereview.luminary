@@ -39,10 +39,7 @@ Rules:
 - Do NOT write a section heading unless you have at least one bullet to place under it.
 - Each finding is one bullet: \`ClassName.java:NN\` — what is wrong → how to fix.
 - Each finding appears exactly once. Do not repeat the same issue.
-- No intro text. Do not summarize the PR.
-
-If you have zero findings total: write only "Замечаний нет. Можно мержить."
-Failure mode: do NOT write "Замечаний нет" if you already wrote findings above.`;
+- No intro text. Do not summarize the PR.`;
 
 /**
  * System prompt for the Explain window (first request).

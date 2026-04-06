@@ -57,7 +57,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
           <div class="codereview-header-info">
             <div class="codereview-header-row">
               <button type="button" id="review-stop-btn" class="codereview-rerun-btn" style="display: none;" title="Остановить генерацию">
-                Стоп
+                Stop
               </button>
               <div id="rerun-btn" class="codereview-rerun-btn" style="display: none;">
                 run again
@@ -96,11 +96,11 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
       rerunBtn.addEventListener('click', async () => {
         const prUrl = window.location.href;
         const diffPath = this.getDiffPath(prUrl);
-        
+
         if (diffPath) {
           await this.clearCache(diffPath);
         }
-        
+
         this.runReview();
       });
     }
@@ -116,14 +116,14 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
 
   getDiffPath(url) {
     const tokens = url.split('/');
-    
+
     if (tokens[2] === 'github.com' && tokens[5] === 'pull') {
       return `https://patch-diff.githubusercontent.com/raw/${tokens[3]}/${tokens[4]}/pull/${tokens[6]}.patch`;
     } else if (url.includes('/-/merge_requests/')) {
       const { origin, pathname } = new URL(url);
       return origin + pathname + '.diff';
     }
-    
+
     return null;
   }
 
@@ -137,7 +137,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
   setStatus(ongoing, failed = false, rerun = true) {
     const statusIcon = this.window.querySelector('#status-icon');
     const rerunBtn = this.window.querySelector('#rerun-btn');
-    
+
     if (ongoing) {
       statusIcon.innerHTML = spinner;
       rerunBtn.style.display = 'none';
@@ -164,7 +164,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     this.setStatus(true);
     const resultDiv = this.window.querySelector('#result');
     resultDiv.innerHTML = '';
-    
+
     await this.clearCache(diffPath);
 
     let config;
@@ -179,15 +179,15 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
 
     let promptArray = [];
     let patch;
-    
+
     // Fetch patch via background script to avoid CORS issues
     try {
       logger.log('[CS] Fetching patch from:', diffPath);
-      const patchResponse = await chrome.runtime.sendMessage({ 
-        action: 'fetchPatch', 
-        url: diffPath 
+      const patchResponse = await chrome.runtime.sendMessage({
+        action: 'fetchPatch',
+        url: diffPath
       });
-      
+
       if (!patchResponse || !patchResponse.success) {
         const errorMsg = patchResponse?.error || 'Unknown error';
         logger.error('[CS] Failed to fetch patch:', errorMsg);
@@ -195,7 +195,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
         this.setStatus(false, true, false);
         return;
       }
-      
+
       patch = patchResponse.data;
       logger.log('[CS] Patch fetched successfully, length:', patch.length);
     } catch (error) {
@@ -204,7 +204,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
       this.setStatus(false, true, false);
       return;
     }
-    
+
     let warning = '';
     let patchParts = [];
 
@@ -267,7 +267,7 @@ Do not respond yet. I will send the code changes in diff format next.`);
     const apiMessages = [systemMessage, ...userMessages];
 
     logger.log('[CS] Sending review request with', apiMessages.length, 'messages');
-    
+
     this._abortReviewStream = null;
     this.setReviewStopVisible(true);
 
@@ -283,13 +283,13 @@ Do not respond yet. I will send the code changes in diff format next.`);
         this._abortReviewStream = null;
         this.setReviewStopVisible(false);
         chrome.storage.session.set({ [diffPath]: resultDiv.innerHTML })
-          .catch(() => chrome.runtime.sendMessage({ 
-            action: 'setCache', 
-            key: diffPath, 
-            value: resultDiv.innerHTML 
+          .catch(() => chrome.runtime.sendMessage({
+            action: 'setCache',
+            key: diffPath,
+            value: resultDiv.innerHTML
           }))
           .catch(() => {});
-        
+
         this.setStatus(false);
       },
       (error) => {
@@ -322,10 +322,10 @@ Do not respond yet. I will send the code changes in diff format next.`);
       logger.log('[FloatingReview] Review already in progress, ignoring duplicate call');
       return;
     }
-    
+
     logger.log('[FloatingReview] Starting review...');
     this.isReviewing = true;
-    
+
     try {
       const prUrl = this.window.querySelector('#pr-url');
       prUrl.textContent = window.location.href;
@@ -348,7 +348,7 @@ Do not respond yet. I will send the code changes in diff format next.`);
 
     if (provider === 'GitHub' && tokens[5] === 'pull') {
       diffPath = `https://patch-diff.githubusercontent.com/raw/${tokens[3]}/${tokens[4]}/pull/${tokens[6]}.patch`;
-      
+
       const element = document.querySelector('.markdown-body');
       if (element) {
         context = element.textContent;
@@ -356,7 +356,7 @@ Do not respond yet. I will send the code changes in diff format next.`);
     } else if (provider === 'GitLab' && window.location.href.includes('/-/merge_requests/')) {
       const { origin, pathname } = window.location;
       diffPath = origin + pathname + '.diff';
-      
+
       const element = document.querySelector('.description textarea');
       if (element) {
         context = element.getAttribute('data-value') || '';
@@ -370,7 +370,7 @@ Do not respond yet. I will send the code changes in diff format next.`);
     }
 
       const resultDiv = this.window.querySelector('#result');
-      
+
       if (error != null) {
         resultDiv.textContent = error;
         this.setStatus(false, true, false);

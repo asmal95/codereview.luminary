@@ -64,13 +64,13 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
           </div>
           <div class="codereview-context-content" id="explain-context"></div>
         </div>
-        
+
         <!-- Chat messages (scrollable) -->
         <div class="codereview-chat-messages" id="explain-messages"></div>
-        
+
         <!-- Fixed input area at bottom -->
         <div class="codereview-chat-input-area">
-          <textarea 
+          <textarea
             id="explain-question-input"
             placeholder="Задайте вопрос о коде (можно оставить пустым для общего объяснения)..."
             rows="2"
@@ -104,7 +104,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         this.explainText();
       });
     }
-    
+
     // Enter key in textarea (Enter to submit, Shift+Enter for new line)
     if (questionInput) {
       questionInput.addEventListener('keydown', (e) => {
@@ -115,7 +115,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         }
       });
     }
-    
+
     // Toggle context panel
     if (contextHeader) {
       contextHeader.addEventListener('click', () => {
@@ -137,7 +137,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   renderMessage(role, content, isStreaming = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `codereview-message codereview-message-${role}`;
-    
+
     if (role === 'assistant') {
       // For assistant messages, render markdown
       messageDiv.innerHTML = content ? renderMarkdown(content) : '';
@@ -148,14 +148,14 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       // For user messages, render as plain text
       messageDiv.textContent = content;
     }
-    
+
     return messageDiv;
   }
 
   // Add message to history and render it
   addMessage(role, content) {
     this.messages.push({ role, content });
-    
+
     const messagesContainer = this.window?.querySelector('#explain-messages');
     if (messagesContainer) {
       const messageElement = this.renderMessage(role, content);
@@ -176,7 +176,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   toggleContext() {
     const contextSection = this.window?.querySelector('#context-section');
     const toggleIcon = this.window?.querySelector('.codereview-toggle-icon');
-    
+
     if (contextSection) {
       contextSection.classList.toggle('collapsed');
       if (toggleIcon) {
@@ -189,7 +189,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   collapseContext() {
     const contextSection = this.window?.querySelector('#context-section');
     const toggleIcon = this.window?.querySelector('.codereview-toggle-icon');
-    
+
     if (contextSection && !contextSection.classList.contains('collapsed')) {
       contextSection.classList.add('collapsed');
       if (toggleIcon) {
@@ -202,7 +202,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
   expandContext() {
     const contextSection = this.window?.querySelector('#context-section');
     const toggleIcon = this.window?.querySelector('.codereview-toggle-icon');
-    
+
     if (contextSection && contextSection.classList.contains('collapsed')) {
       contextSection.classList.remove('collapsed');
       if (toggleIcon) {
@@ -224,19 +224,19 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     logger.log('[FloatingExplain] Current state:', this.state);
     logger.log('[FloatingExplain] Current selectedText:', this.selectedText?.substring(0, 50) + (this.selectedText?.length > 50 ? '...' : ''));
     logger.log('[FloatingExplain] New text:', text?.substring(0, 50) + (text?.length > 50 ? '...' : ''));
-    
+
     if (!this.window) return;
-    
+
     // Prevent reopening if window was just closed with same text (cooldown period)
     const timeSinceHide = Date.now() - this.lastHideTime;
     const sameText = this.selectedText === text;
     logger.log('[FloatingExplain] Time since hide:', timeSinceHide, 'ms, same text:', sameText);
-    
+
     if (timeSinceHide < 2000 && sameText) {
       logger.log('[FloatingExplain] IGNORING show() - cooldown period (window just closed with same text)');
       return;
     }
-    
+
     // Don't update anything if streaming - just make window visible
     if (this.state === 'STREAMING') {
       logger.log('[FloatingExplain] State is STREAMING, just making visible');
@@ -244,11 +244,11 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       super.show();
       return;
     }
-    
+
     // Clear chat history if text changed OR window was previously hidden
     const textChanged = !sameText;
     logger.log('[FloatingExplain] Opening window - text changed:', textChanged, 'wasHidden:', this.wasHidden);
-    
+
     if ((textChanged || this.wasHidden) && this.state !== 'LOADING') {
       logger.log('[FloatingExplain] Clearing chat history for fresh start');
       this.state = 'IDLE';
@@ -256,11 +256,11 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       // Expand context when opening window
       this.expandContext();
     }
-    
+
     this.selectedText = text;
     this.updateContextDisplay();
     this.wasHidden = false; // Reset flag after showing
-    
+
     logger.log('[FloatingExplain] Calling super.show()');
     super.show();
 
@@ -273,7 +273,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       }
     }
   }
-  
+
   hide() {
     this.lastHideTime = Date.now();
     this.wasHidden = true; // Mark that window was hidden
@@ -287,7 +287,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       logger.log('[CS] Request already in progress, ignoring duplicate call');
       return;
     }
-    
+
     if (!this.window) {
       logger.error('[CS] Window not found');
       return;
@@ -296,35 +296,35 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     const questionInput = this.window.querySelector('#explain-question-input');
     const submitBtn = this.window.querySelector('#explain-submit-btn');
     const userQuestion = questionInput?.value.trim() || '';
-    
+
     // Allow empty question for first request (acts as "explain this code")
     const isFirstRequest = this.messages.length === 0;
-    
+
     // Add user message to chat only if there's a question
     // For first request with empty input, don't add user message
     if (userQuestion) {
       this.addMessage('user', userQuestion);
     }
-    
+
     // Always collapse context when sending request to give more space for chat
     this.collapseContext();
-    
+
     // Clear input
     if (questionInput) {
       questionInput.value = '';
     }
-    
+
     // Disable button
     if (submitBtn) {
       submitBtn.disabled = true;
       submitBtn.textContent = 'Думаю...';
     }
-    
+
     // Start new request
     this.state = 'LOADING';
     this.streamRequestId = (this.streamRequestId || 0) + 1;
     const currentRequestId = this.streamRequestId;
-    
+
     // Get config
     let config;
     try {
@@ -334,7 +334,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       logger.error('[CS] Failed to get config for explain:', e);
       this.state = 'ERROR';
       const errorMsg = 'Ошибка: не удалось загрузить конфигурацию. Проверьте настройки расширения.';
-      
+
       const messagesContainer = this.window.querySelector('#explain-messages');
       if (messagesContainer) {
         const errorElement = this.renderMessage('assistant', errorMsg);
@@ -342,23 +342,23 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         messagesContainer.appendChild(errorElement);
         this.scrollToBottom();
       }
-      
+
       if (submitBtn) {
         submitBtn.disabled = false;
         this.resetSubmitButton(submitBtn);
       }
       return;
     }
-    
+
     // Build prompt using explainPrompt template with variable substitution
     let systemPrompt;
-    
+
     if (isFirstRequest) {
       // First request: system prompt contains only the selected code context.
       // The user's question is sent as a separate user message below (no {question} here).
       systemPrompt = config.explainPrompt
         .replace(/{text}/g, this.selectedText);
-      
+
       logger.log('[CS] First request - using explainPrompt');
       logger.log('[CS] Selected text length:', this.selectedText.length);
       logger.log('[CS] Selected text preview:', this.selectedText.substring(0, 100));
@@ -369,10 +369,10 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         .replace(/{context}/g, this.selectedText);
       logger.log('[CS] Follow-up request - using explainFollowUpSystem');
     }
-    
+
     logger.log('[CS] System prompt length:', systemPrompt.length);
     logger.log('[CS] System prompt preview:', systemPrompt.substring(0, 200));
-    
+
     // Build API messages.
     // For a first request with empty input the user message array is empty, so we inject
     // the default question directly into the API payload (without rendering it in the UI).
@@ -384,23 +384,23 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       const defaultQ = config.explainDefaultQuestion || 'Explain this fragment: what it does and why.';
       apiMessages.push({ role: 'user', content: defaultQ });
     }
-    
+
     logger.log('[CS] Total API messages:', apiMessages.length);
     logger.log('[CS] API messages:', apiMessages.map(m => ({ role: m.role, length: m.content.length })));
     logger.log('[CS] Full API messages for debugging:', JSON.stringify(apiMessages, null, 2));
-    
+
     // Create empty assistant message for streaming
     const messagesContainer = this.window.querySelector('#explain-messages');
     let assistantElement = null;
-    
+
     if (messagesContainer) {
       assistantElement = this.renderMessage('assistant', '', true);
       messagesContainer.appendChild(assistantElement);
       this.scrollToBottom();
     }
-    
+
     let fullResponse = '';
-    
+
     try {
       this.state = 'STREAMING';
       if (submitBtn) {
@@ -416,7 +416,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         (accumulatedResponse) => {
           if (currentRequestId !== this.streamRequestId) return;
           if (!this.window || !assistantElement) return;
-          
+
           fullResponse = accumulatedResponse;  // Just assign, don't concatenate!
           assistantElement.innerHTML = renderMarkdown(fullResponse);
           this.scrollToBottom();
@@ -425,18 +425,18 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         () => {
           if (currentRequestId !== this.streamRequestId) return;
           if (!this.window) return;
-          
+
           this.state = 'COMPLETED';
           this._abortExplainStream = null;
-          
+
           // Add assistant message to history
           this.messages.push({ role: 'assistant', content: fullResponse });
-          
+
           // Remove streaming class
           if (assistantElement) {
             assistantElement.classList.remove('streaming');
           }
-          
+
           if (submitBtn) {
             this.resetSubmitButton(submitBtn);
           }
@@ -445,12 +445,12 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         (error) => {
           if (currentRequestId !== this.streamRequestId) return;
           if (!this.window || !assistantElement) return;
-          
+
           this.state = 'ERROR';
           this._abortExplainStream = null;
-          
+
           const errorText = `Ошибка: ${error}`;
-          
+
           if (fullResponse) {
             // If we have partial response, add error below it
             assistantElement.innerHTML = renderMarkdown(fullResponse + '\n\n---\n\n' + errorText);
@@ -458,11 +458,11 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
             // Otherwise just show error
             assistantElement.textContent = errorText;
           }
-          
+
           assistantElement.classList.add('error');
           assistantElement.classList.remove('streaming');
           this.scrollToBottom();
-          
+
           if (submitBtn) {
             this.resetSubmitButton(submitBtn);
           }
@@ -471,7 +471,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         (partial) => {
           if (currentRequestId !== this.streamRequestId) return;
           if (!this.window) return;
-          
+
           this.state = 'COMPLETED';
           this._abortExplainStream = null;
           const saved =
@@ -500,22 +500,22 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       logger.error('[CS] Unexpected error in explainText:', error);
       this.state = 'ERROR';
       this._abortExplainStream = null;
-      
+
       if (assistantElement) {
         const errorText = `Ошибка: ${error.message || error}`;
-        
+
         // Preserve partial response if any was received
         if (fullResponse) {
           assistantElement.innerHTML = renderMarkdown(fullResponse + '\n\n---\n\n' + errorText);
         } else {
           assistantElement.textContent = errorText;
         }
-        
+
         assistantElement.classList.add('error');
         assistantElement.classList.remove('streaming');
         this.scrollToBottom();
       }
-      
+
       if (submitBtn) {
         this.resetSubmitButton(submitBtn);
       }
@@ -529,7 +529,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-4 h-4">
         <rect x="6" y="6" width="12" height="12" rx="2"/>
       </svg>
-      Стоп
+      Stop
     `;
   }
 

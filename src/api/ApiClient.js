@@ -20,7 +20,7 @@ export class ApiClient {
       messages: messages,
       stream: true,
       max_tokens: config.maxTokens || 8192,
-      temperature: config.temperature !== undefined ? config.temperature : 0.7,
+      temperature: config.temperature !== undefined ? config.temperature : 0.1,
       top_p: 1.0
     };
 
