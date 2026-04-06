@@ -37,7 +37,7 @@ Allowed sections (use only the ones that have findings):
 
 Rules:
 - Do NOT write a section heading unless you have at least one bullet to place under it.
-- Each finding is one bullet: \`ClassName.java:NN\` — what is wrong → how to fix.
+- Each finding is one bullet: \`ClassName.java:NN\` — what is wrong → how to fix (where NN - is line number!).
 - Each finding appears exactly once. Do not repeat the same issue.
 - No intro text. Do not summarize the PR.`;
 

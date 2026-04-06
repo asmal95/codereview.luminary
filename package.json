@@ -1,7 +1,7 @@
 {
   "name": "codereview.luminary",
-  "version": "0.3.0",
-  "description": "Reviews PRs so that you can pretend to work",
+  "version": "0.1.0",
+  "description": "Review Merge Requests and ask questions using any OpenAI API-compatible AI model.",
   "private": true,
   "scripts": {
     "watch": "webpack --mode=development --watch --config config/webpack.config.js",

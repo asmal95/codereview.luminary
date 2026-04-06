@@ -59,7 +59,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
         <!-- Context panel (collapsible) -->
         <div class="codereview-context-section" id="context-section">
           <div class="codereview-context-header" id="context-header">
-            <span>📋 Контекст кода</span>
+            <span>📋 Context</span>
             <span class="codereview-toggle-icon">▼</span>
           </div>
           <div class="codereview-context-content" id="explain-context"></div>
