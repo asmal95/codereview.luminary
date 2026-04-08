@@ -31,13 +31,13 @@ Important constraints:
 export const DEFAULT_FINAL_PROMPT = `All diffs received. Write the review now.
 
 Allowed sections (use only the ones that have findings):
-- **Критично (блокер):** bugs, security, data loss, race conditions
+- **Критично:** bugs, security, data loss, race conditions
 - **Важно:** design flaws, missing error handling, antipatterns
 - **Незначительно:** optional improvements
 
 Rules:
 - Do NOT write a section heading unless you have at least one bullet to place under it.
-- Each finding is one bullet: \`ClassName.java:NN\` — what is wrong → how to fix (where NN - is line number!).
+- Each finding is one bullet: \`ClassName.java\` — what is wrong → how to fix.
 - Each finding appears exactly once. Do not repeat the same issue.
 - No intro text. Do not summarize the PR.`;
 

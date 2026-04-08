@@ -1,7 +1,6 @@
 'use strict';
 
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 const PATHS = require('./paths');
 const path = require('path')
@@ -29,11 +28,6 @@ const common = {
   },
   module: {
     rules: [
-      // Help webpack in understanding CSS files imported in .js files
-      // {
-      //   test: /\.css$/,
-      //   use: [MiniCssExtractPlugin.loader, 'css-loader'],
-      // },
       {
         test: /\.css$/i,
         include: path.resolve(__dirname, '../src'),
@@ -63,10 +57,6 @@ const common = {
           context: 'public',
         },
       ],
-    }),
-    // Extract CSS into separate files
-    new MiniCssExtractPlugin({
-      filename: '[name].css',
     }),
   ],
 };

@@ -1,109 +1,62 @@
-# codereview.gpt
+# codereview.luminary
 
-Chrome extension that reviews Pull Requests using ChatGPT and provides AI-powered code explanations.
+Chrome extension for **AI review of full GitHub PRs / GitLab MRs** and **explaining selected text** via any **OpenAI-compatible** HTTP API (OpenAI, OpenRouter, local servers, etc.).
 
 ## Features
 
-### Code Review
+### Connect any compatible LLM
 
-Automatically reviews GitHub PRs and GitLab MRs with AI-generated feedback.
+Point the extension at your provider: **API key**, **base URL**, **model**, plus **temperature** and **max tokens** for responses. If the API speaks the usual chat-completions-style protocol, it works.
 
-**[SCREENSHOT: Review window showing code feedback]**
+### Whole MR / PR review
 
-How to use:
-- Open any GitHub PR or GitLab MR
-- Click the extension icon
-- Get instant AI review with streaming response
+![Floating review over an MR](docs/img/review.png)
 
-The extension analyzes commit messages, code changes (in patch format), and PR description to provide relevant feedback.
+On a PR or MR page, run one review over the **entire change**: title, description, commits, and **full diff**. You get a single streamed summary-style review in the floating panel.
 
-### AI Chat for Code Explanation
+**Size limit:** the diff is split **per file**. Each file’s diff block is capped at **15,384 characters** (~4K tokens); longer blocks are **truncated** and a warning is shown. Very large MRs may still hit provider context limits—trim or review in parts if needed.
 
-Chat-style interface for understanding any code you encounter.
+### Explain selection (context menu)
 
-**[SCREENSHOT: Chat window with selected code context]**
+![Explain selection](docs/img/explain_context.png)
 
-How to use:
-- Select text on any webpage (code, errors, docs)
-- Right-click → "Объяснить с помощью AI"
-- Ask questions in the chat or hit send for general explanation
-- Get follow-up clarifications in the same conversation
+![Explain selection](docs/img/explain.png)
 
-The selected code stays as context throughout the conversation. Each new selection starts a fresh chat.
+Select text on any page → right-click → **«Объяснить с помощью AI»** → a floating window explains the selection; you can chat further in the same thread. New selection starts a fresh explain session.
 
 ## Configuration
 
-Access settings via extension icon → Options (opens in new tab).
+Extension icon → **Options** (opens a tab). Key fields: API key, base URL, model, timeout, max tokens, temperature, and customizable prompts (system, review, final, explain).
 
-**[SCREENSHOT: Options page showing all settings]**
-
-Available parameters:
-- **API Key** - Your OpenAI or compatible API key
-- **Base URL** - Custom API endpoint (default: OpenAI)
-- **Model** - Which model to use (gpt-4, claude, etc.)
-- **Max Tokens** - Response length limit (default: 8192)
-  - Lower values: shorter responses, better reliability
-  - Higher values: longer responses, may cause errors with some providers
-  - Recommended: 4096-8192 for most use cases
-- **Temperature** - Creativity level (0.0-2.0, default: 0.1)
-  - 0.0: Focused and deterministic
-  - 1.0: More creative and varied
-- **Prompts** - Customize system instructions, review format, and explanation style
-
-### Finding the Right max_tokens
-
-Start with 8192. If you get errors, reduce to 6144 or 4096. If responses get cut off, increase to 12288.
+![Extension options](docs/img/config.png)
 
 ## Installation
 
-### From Chrome Web Store
+### Chrome Web Store
 
-Install from [Chrome Web Store](https://chrome.google.com/webstore/detail/codereviewgpt/amdfidcajdihmbhmmgohhkoaijpkocdn).
+Not published yet
 
 ### Build from source
 
 ```bash
-git clone https://github.com/sturdy-dev/codereview.gpt.git
-cd codereview.gpt
+git clone https://github.com/asmal95/codereview.luminary.git
+cd codereview.luminary
 npm install
 npm run build
 ```
 
-Then:
-1. Go to `chrome://extensions`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select the `build` folder
-
-## FAQ
-
-**Are the reviews trustworthy?**  
-Use them as suggestions, not gospel. AI can spot real issues but also hallucinates occasionally. Re-run the review if something seems off.
-
-**What data does it analyze?**  
-The extension sends code diffs (patch format), commit messages, and PR/MR description to the API. Nothing is stored on any servers - everything goes directly to your configured API endpoint.
-
-**Does it post comments automatically?**  
-No. The review appears only in the extension window. Copy-paste any useful feedback manually.
-
-**Why use this?**  
-Catch bugs you missed, learn best practices, get a second opinion, or just pretend to work while gaming.
+Load the `build` folder at `chrome://extensions` → Developer mode → **Load unpacked**.
 
 ## Privacy
 
-- All API calls go directly to your configured endpoint (OpenAI, OpenRouter, local server, etc.)
-- No data is sent to third-party servers
-- API keys are stored locally in Chrome's secure storage
-- Reviews are cached temporarily in session storage for performance
+API calls go only to your endpoint. Keys stay in Chrome’s local storage.
 
-## Supported Browsers
+## Browsers
 
-Chrome and Chromium-based browsers (Edge, Brave, etc.)
+Chrome and other Chromium-based browsers (Edge, Brave, …).
 
 ## License
 
-MIT - see [LICENSE.txt](LICENSE.txt)
+MIT — see [LICENSE.txt](LICENSE.txt).
 
----
-
-Original project by [sturdy-dev](https://github.com/sturdy-dev/codereview.gpt)
+Fork based on [sturdy-dev/codereview.gpt](https://github.com/sturdy-dev/codereview.gpt).
