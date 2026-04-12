@@ -175,6 +175,57 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     if (stream) stream.classList.remove('is-streaming');
   }
 
+  buildReviewIntroMessages(config, title, context) {
+    const reviewPromptWithVars = config.reviewPrompt.replace(/{title}/g, title);
+    return [
+      { role: 'user', content: reviewPromptWithVars },
+      {
+        role: 'user',
+        content: `A description to help you understand why these changes were made (markdown):
+
+${context}
+
+Do not respond yet. I will send the code changes in diff format next.`
+      }
+    ];
+  }
+
+  streamReviewRequest(config, messages, handlers) {
+    let resolved = false;
+    let resolvePromise;
+    let rejectPromise;
+    const promise = new Promise((resolve, reject) => {
+      resolvePromise = resolve;
+      rejectPromise = reject;
+    });
+
+    const { abort } = ApiClient.streamRequest(
+      config,
+      messages,
+      (parts) => handlers.onChunk?.(parts),
+      () => {
+        if (resolved) return;
+        resolved = true;
+        handlers.onDone?.();
+        resolvePromise({ aborted: false });
+      },
+      (error) => {
+        if (resolved) return;
+        resolved = true;
+        handlers.onError?.(error);
+        rejectPromise(new Error(error));
+      },
+      (partial) => {
+        if (resolved) return;
+        resolved = true;
+        handlers.onAbort?.(partial);
+        resolvePromise({ aborted: true, partial });
+      }
+    );
+
+    return { abort, promise };
+  }
+
   setStatus(ongoing, failed = false, rerun = true) {
     const statusIcon = this.window.querySelector('#status-icon');
     const rerunBtn = this.window.querySelector('#rerun-btn');
@@ -218,7 +269,6 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
       return;
     }
 
-    let promptArray = [];
     let patch;
 
     // Fetch patch via background script to avoid CORS issues
@@ -246,17 +296,7 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
       return;
     }
 
-    let warning = '';
-    let patchParts = [];
-
-    const reviewPromptWithVars = config.reviewPrompt.replace(/{title}/g, title);
-    promptArray.push(reviewPromptWithVars);
-
-    promptArray.push(`A description to help you understand why these changes were made (markdown):
-
-${context}
-
-Do not respond yet. I will send the code changes in diff format next.`);
+    const introMessages = this.buildReviewIntroMessages(config, title, context);
 
     // Remove binary patches
     const regex = /GIT\sbinary\spatch(.*)literal\s0/mgis;
@@ -264,8 +304,12 @@ Do not respond yet. I will send the code changes in diff format next.`);
 
     const files = parsediff(patch);
 
-    files.forEach(function(file) {
-      if (file.from.includes('lock.json')) {
+    const patchEntries = [];
+    let hasTruncatedPatch = false;
+    files.forEach((file) => {
+      const fromPath = typeof file.from === 'string' ? file.from : '';
+      const toPath = typeof file.to === 'string' ? file.to : '';
+      if (fromPath.includes('lock.json') || toPath.includes('lock.json')) {
         return;
       }
 
@@ -273,7 +317,7 @@ Do not respond yet. I will send the code changes in diff format next.`);
 
       patchPartArray.push('```diff');
       if ('from' in file && 'to' in file) {
-        patchPartArray.push('diff --git a' + file.from + ' b'+ file.to);
+        patchPartArray.push('diff --git a' + file.from + ' b' + file.to);
       }
       if ('new' in file && file.new === true && 'newMode' in file) {
         patchPartArray.push('new file mode ' + file.newMode);
@@ -295,79 +339,176 @@ Do not respond yet. I will send the code changes in diff format next.`);
       let patchPart = patchPartArray.join('\n');
       if (patchPart.length >= 15384) {
         patchPart = patchPart.slice(0, 15384);
-        warning = 'Some parts of your patch were truncated as it was larger than 4096 tokens or 15384 characters. The review might not be as complete.';
+        hasTruncatedPatch = true;
       }
-      patchParts.push(patchPart);
+      patchEntries.push({
+        filePath: toPath && toPath !== '/dev/null' ? toPath : fromPath || 'unknown-file',
+        patchPart
+      });
     });
 
-    patchParts.forEach(part => {
-      promptArray.push(part);
-    });
+    if (patchEntries.length === 0) {
+      resultDiv.innerHTML = '<p><em>No reviewable text patches were found.</em></p>';
+      this.setStatus(false, false, true);
+      return;
+    }
 
-    promptArray.push(config.finalPrompt);
-
-    const systemMessage = { role: 'system', content: config.systemPrompt };
-    const userMessages = promptArray.map(msg => ({ role: 'user', content: msg }));
-    const apiMessages = [systemMessage, ...userMessages];
-
-    logger.log('[CS] Sending review request with', apiMessages.length, 'messages');
+    const warning = hasTruncatedPatch
+      ? 'Some parts of your patch were truncated as it was larger than 4096 tokens or 15384 characters. The review might not be as complete.'
+      : '';
 
     this._abortReviewStream = null;
     this.setReviewStopVisible(true);
-    this.prepareReviewStreamShell(resultDiv);
 
-    const { abort } = ApiClient.streamRequest(
-      config,
-      apiMessages,
-      (parts) => {
-        logger.log(
-          '[CS] Review stream — content length:',
-          parts.content.length,
-          'reasoning:',
-          parts.reasoning.length
-        );
-        this.updateReviewStreamLayout(resultDiv, parts, warning);
-      },
-      () => {
-        logger.log('[CS] Review completed, final length:', resultDiv.textContent.length);
-        this._abortReviewStream = null;
-        this.setReviewStopVisible(false);
-        this.endReviewStreamLayout(resultDiv);
-        chrome.storage.session.set({ [diffPath]: resultDiv.innerHTML })
-          .catch(() => chrome.runtime.sendMessage({
-            action: 'setCache',
-            key: diffPath,
-            value: resultDiv.innerHTML
-          }))
-          .catch(() => {});
+    if (!config.perFileReviewMode) {
+      const systemMessage = { role: 'system', content: config.systemPrompt };
+      const userMessages = [
+        ...introMessages,
+        ...patchEntries.map((entry) => ({ role: 'user', content: entry.patchPart })),
+        { role: 'user', content: config.finalPrompt }
+      ];
+      const apiMessages = [systemMessage, ...userMessages];
+      logger.log('[CS] Sending review request with', apiMessages.length, 'messages');
 
-        this.setStatus(false);
-      },
-      (error) => {
-        logger.error('[CS] Review error:', error);
-        this._abortReviewStream = null;
-        this.setReviewStopVisible(false);
-        resultDiv.innerHTML = renderMarkdown(error);
-        this.setStatus(false, true, true);
-      },
-      (partial) => {
-        this._abortReviewStream = null;
-        this.setReviewStopVisible(false);
-        const content = typeof partial === 'string' ? partial : (partial?.content || '');
-        const reasoning = typeof partial === 'object' && partial?.reasoning ? partial.reasoning : '';
-        if (content.trim() || reasoning) {
-          const body = content.trim()
+      this.prepareReviewStreamShell(resultDiv);
+      const request = this.streamReviewRequest(config, apiMessages, {
+        onChunk: (parts) => {
+          logger.log(
+            '[CS] Review stream — content length:',
+            parts.content.length,
+            'reasoning:',
+            parts.reasoning.length
+          );
+          this.updateReviewStreamLayout(resultDiv, parts, warning);
+        },
+        onDone: () => {
+          logger.log('[CS] Review completed, final length:', resultDiv.textContent.length);
+          this._abortReviewStream = null;
+          this.setReviewStopVisible(false);
+          this.endReviewStreamLayout(resultDiv);
+          chrome.storage.session.set({ [diffPath]: resultDiv.innerHTML })
+            .catch(() => chrome.runtime.sendMessage({
+              action: 'setCache',
+              key: diffPath,
+              value: resultDiv.innerHTML
+            }))
+            .catch(() => {});
+          this.setStatus(false);
+        },
+        onError: (error) => {
+          logger.error('[CS] Review error:', error);
+          this._abortReviewStream = null;
+          this.setReviewStopVisible(false);
+          resultDiv.innerHTML = renderMarkdown(error);
+          this.setStatus(false, true, true);
+        },
+        onAbort: (partial) => {
+          this._abortReviewStream = null;
+          this.setReviewStopVisible(false);
+          const content = typeof partial === 'string' ? partial : (partial?.content || '');
+          const reasoning = typeof partial === 'object' && partial?.reasoning ? partial.reasoning : '';
+          if (content.trim() || reasoning) {
+            const body = content.trim()
+              ? `${content}\n\n*Генерация остановлена.*`
+              : '*Генерация остановлена.*';
+            this.updateReviewStreamLayout(resultDiv, { reasoning, content: body }, warning);
+            this.endReviewStreamLayout(resultDiv);
+          } else {
+            resultDiv.innerHTML = '<p><em>Генерация остановлена.</em></p>';
+          }
+          this.setStatus(false, false, true);
+        }
+      });
+      this._abortReviewStream = request.abort;
+      return;
+    }
+
+    logger.log('[CS] Per-file review mode enabled, file count:', patchEntries.length);
+    const sections = [];
+    let activeAbort = null;
+    let stopRequested = false;
+    let hadAnyContent = false;
+
+    const renderPerFileSections = () => {
+      const markdown = sections.map((section) => {
+        const body = section.content || '*No response.*';
+        return `## \`${section.filePath}\`\n\n${body}`;
+      }).join('\n\n---\n\n');
+      const finalMarkdown = warning ? `${markdown}\n\n---\n\n${warning}` : markdown;
+      resultDiv.innerHTML = renderMarkdown(finalMarkdown);
+    };
+
+    this._abortReviewStream = () => {
+      stopRequested = true;
+      activeAbort?.();
+    };
+
+    for (const entry of patchEntries) {
+      if (stopRequested) break;
+
+      const section = { filePath: entry.filePath, content: '*Generating review...*' };
+      sections.push(section);
+      renderPerFileSections();
+
+      const apiMessages = [
+        { role: 'system', content: config.systemPrompt },
+        ...introMessages,
+        { role: 'user', content: entry.patchPart }
+      ];
+
+      const request = this.streamReviewRequest(config, apiMessages, {
+        onChunk: (parts) => {
+          hadAnyContent = hadAnyContent || !!parts.content.trim();
+          section.content = parts.content || '*Generating review...*';
+          renderPerFileSections();
+        },
+        onError: (error) => {
+          logger.error('[CS] Per-file review error:', entry.filePath, error);
+          section.content = `**Error reviewing this file:**\n\n${error}`;
+          renderPerFileSections();
+        },
+        onAbort: (partial) => {
+          const content = typeof partial === 'string' ? partial : (partial?.content || '');
+          section.content = content.trim()
             ? `${content}\n\n*Генерация остановлена.*`
             : '*Генерация остановлена.*';
-          this.updateReviewStreamLayout(resultDiv, { reasoning, content: body }, warning);
-          this.endReviewStreamLayout(resultDiv);
-        } else {
-          resultDiv.innerHTML = '<p><em>Генерация остановлена.</em></p>';
+          renderPerFileSections();
         }
-        this.setStatus(false, false, true);
+      });
+
+      activeAbort = request.abort;
+      try {
+        const result = await request.promise;
+        if (result?.aborted) {
+          stopRequested = true;
+          break;
+        }
+      } catch (_) {
+        // Error is already rendered in section; continue reviewing next files.
+      } finally {
+        activeAbort = null;
       }
-    );
-    this._abortReviewStream = abort;
+    }
+
+    this._abortReviewStream = null;
+    this.setReviewStopVisible(false);
+
+    if (!sections.length || (!hadAnyContent && stopRequested)) {
+      resultDiv.innerHTML = '<p><em>Генерация остановлена.</em></p>';
+      this.setStatus(false, false, true);
+      return;
+    }
+
+    renderPerFileSections();
+    chrome.storage.session.set({ [diffPath]: resultDiv.innerHTML })
+      .catch(() => chrome.runtime.sendMessage({
+        action: 'setCache',
+        key: diffPath,
+        value: resultDiv.innerHTML
+      }))
+      .catch(() => {});
+
+    this.setStatus(false, false, true);
   }
 
   async runReview() {

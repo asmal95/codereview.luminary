@@ -25,7 +25,8 @@ export async function getConfig() {
         'review_prompt',
         'final_prompt',
         'explain_prompt',
-        'debug_mode'
+        'debug_mode',
+        'per_file_review_mode'
       ], resolve);
     });
   } catch (e) {
@@ -66,6 +67,7 @@ export async function getConfig() {
     explainDefaultQuestion: EXPLAIN_DEFAULT_QUESTION,
     explainFollowUpSystem: EXPLAIN_FOLLOW_UP_SYSTEM,
     debugMode,
-    reasoningEffortNone: options.reasoning_effort_none === true
+    reasoningEffortNone: options.reasoning_effort_none === true,
+    perFileReviewMode: options.per_file_review_mode === true
   };
 }

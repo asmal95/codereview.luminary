@@ -154,7 +154,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       'review_prompt',
       'final_prompt',
       'explain_prompt',
-      'debug_mode'
+      'debug_mode',
+      'per_file_review_mode'
     ], (items) => {
       sendResponse(items);
     });
