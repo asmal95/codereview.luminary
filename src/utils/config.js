@@ -20,6 +20,7 @@ export async function getConfig() {
         'api_timeout',
         'max_tokens',
         'temperature',
+        'reasoning_effort_none',
         'system_prompt',
         'review_prompt',
         'final_prompt',
@@ -46,7 +47,7 @@ export async function getConfig() {
   const finalPrompt = options.final_prompt || DEFAULT_FINAL_PROMPT;
   const explainPrompt = options.explain_prompt || DEFAULT_EXPLAIN_PROMPT;
   const debugMode = options.debug_mode === true;
-  
+
   if (!isLocalhost && !apiKey) {
     throw new Error('UNAUTHORIZED');
   }
@@ -64,6 +65,7 @@ export async function getConfig() {
     explainPrompt,
     explainDefaultQuestion: EXPLAIN_DEFAULT_QUESTION,
     explainFollowUpSystem: EXPLAIN_FOLLOW_UP_SYSTEM,
-    debugMode
+    debugMode,
+    reasoningEffortNone: options.reasoning_effort_none === true
   };
 }

@@ -61,6 +61,17 @@
       </label>
       <input type="number" name="temperature" id="temperature" placeholder="0.7" min="0" max="2" step="0.1" style="width: 100%; padding: 5px;" />
 
+      <label for="reasoning_effort_none" style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+        <input type="checkbox" name="reasoning_effort_none" id="reasoning_effort_none" style="margin-top: 4px;" />
+        <span>
+          <strong>Send <code>reasoning_effort: none</code></strong><br/>
+          <small>
+            When enabled, each chat request includes this field so thinking-capable models (e.g. Qwen3 on Ollama) stream the answer in <code>content</code> instead of a long <code>reasoning</code> trace.
+            Turn off for APIs that do not support the field or if you want the model’s thinking stream.
+          </small>
+        </span>
+      </label>
+
       <label for="debug_mode" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
         <input type="checkbox" name="debug_mode" id="debug_mode" />
         <span>

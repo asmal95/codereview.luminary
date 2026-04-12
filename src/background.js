@@ -14,6 +14,29 @@ chrome.storage.onChanged.addListener((changes) => {
 
 logger.log('[BG] Background script loaded');
 
+/**
+ * Visible streaming text from an OpenAI-style `delta`.
+ * Thinking models may stream CoT into `reasoning` / `reasoning_content` / `thinking`
+ * before (or instead of) `content`. Once non-empty `content` arrives, drop reasoning
+ * so the UI does not mix the final review with an endless "Wait, …" trace.
+ */
+function takeOpenAiStreamDelta(delta, state) {
+  if (!delta || typeof delta !== 'object') return '';
+  const content = typeof delta.content === 'string' ? delta.content : '';
+  const reasoning =
+    (typeof delta.reasoning_content === 'string' && delta.reasoning_content) ||
+    (typeof delta.reasoning === 'string' && delta.reasoning) ||
+    (typeof delta.thinking === 'string' && delta.thinking) ||
+    '';
+
+  if (content.length > 0) {
+    state.sawNonEmptyContent = true;
+    return content;
+  }
+  if (state.sawNonEmptyContent) return '';
+  return reasoning;
+}
+
 // Pending resolve callbacks waiting for contentScriptReady from a specific tab.
 // Keyed by tabId; set up before executeScript so the signal is never missed.
 const readyCallbacks = new Map();
@@ -128,6 +151,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       'api_timeout',
       'max_tokens',
       'temperature',
+      'reasoning_effort_none',
       'system_prompt',
       'review_prompt',
       'final_prompt',
@@ -247,6 +271,7 @@ chrome.runtime.onConnect.addListener((port) => {
       let buffer = '';
       let chunkCount = 0;
       let rawLineCount = 0;
+      const streamDeltaState = { sawNonEmptyContent: false };
 
       while (true) {
         // Check abort signal before attempting next read (handles buffered-data race)
@@ -317,7 +342,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
             try {
               const json = JSON.parse(data);
-              const content = json.choices?.[0]?.delta?.content || '';
+              const content = takeOpenAiStreamDelta(json.choices?.[0]?.delta, streamDeltaState);
               const finishReason = json.choices?.[0]?.finish_reason;
 
               if (finishReason) {
@@ -343,9 +368,14 @@ chrome.runtime.onConnect.addListener((port) => {
             // Try plain JSON format (Ollama might send without "data: " prefix)
             try {
               const json = JSON.parse(line);
-              const content = json.choices?.[0]?.delta?.content ||
-                             json.message?.content ||
-                             json.response || '';
+              let content = takeOpenAiStreamDelta(json.choices?.[0]?.delta, streamDeltaState);
+              if (!content) {
+                const fallback = json.message?.content || json.response || '';
+                if (fallback) {
+                  streamDeltaState.sawNonEmptyContent = true;
+                  content = fallback;
+                }
+              }
 
               if (content) {
                 chunkCount++;

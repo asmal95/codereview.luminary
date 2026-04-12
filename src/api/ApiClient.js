@@ -24,6 +24,10 @@ export class ApiClient {
       top_p: 1.0
     };
 
+    if (config.reasoningEffortNone === true) {
+      requestBody.reasoning_effort = 'none';
+    }
+
     const url = `${config.baseUrl}/chat/completions`;
     const timeoutMs = config.apiTimeout || 300000; // Default 5 minutes
     logger.log('[CS] Starting streaming request to:', url, `timeout: ${timeoutMs}ms`);
