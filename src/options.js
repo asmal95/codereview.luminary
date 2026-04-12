@@ -81,7 +81,8 @@ const saveOptions = () => {
               ? false
               : undefined;
         document.getElementById('reasoning_effort_none').checked =
-          items.reasoning_effort_none === true || (items.reasoning_effort_none === undefined && fromLegacy === true);
+          items.reasoning_effort_none === true ||
+          (items.reasoning_effort_none === undefined && fromLegacy === true);
         document.getElementById('system_prompt').value = items.system_prompt || DEFAULT_SYSTEM_PROMPT;
         document.getElementById('review_prompt').value = items.review_prompt || DEFAULT_REVIEW_PROMPT;
         document.getElementById('final_prompt').value = items.final_prompt || DEFAULT_FINAL_PROMPT;

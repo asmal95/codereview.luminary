@@ -205,6 +205,15 @@
   display: none;
 }
 
+.codereview-thinking-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
 .codereview-thinking-spinner {
   width: 14px;
   height: 14px;
@@ -216,9 +225,30 @@
   opacity: 0.35;
 }
 
+.codereview-thinking-done {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  color: #2f9e44;
+}
+
 .codereview-review-stream.is-streaming .codereview-thinking-spinner {
   opacity: 1;
   animation: codereview-thinking-spin 0.65s linear infinite;
+}
+
+.codereview-review-stream:not(.is-streaming) .codereview-thinking-spinner {
+  display: none;
+  animation: none;
+}
+
+.codereview-review-stream:not(.is-streaming) .codereview-thinking-done {
+  display: inline-flex;
 }
 
 @keyframes codereview-thinking-spin {

@@ -139,7 +139,10 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
       <div class="codereview-review-stream is-streaming">
         <details class="codereview-thinking-details" id="review-thinking-block" hidden>
           <summary class="codereview-thinking-summary">
-            <span class="codereview-thinking-spinner" aria-hidden="true"></span>
+            <span class="codereview-thinking-status" aria-hidden="true">
+              <span class="codereview-thinking-spinner"></span>
+              <span class="codereview-thinking-done" title="Готово">✓</span>
+            </span>
             <span class="codereview-thinking-label">Размышление модели</span>
           </summary>
           <div class="codereview-thinking-body" id="review-thinking"></div>
