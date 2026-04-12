@@ -20,6 +20,10 @@ export class BaseFloatingWindow {
     this.resizeStartWidth = 0;
     this.resizeStartHeight = 0;
     this.isMinimized = false;
+    this._documentListenersAttached = false;
+    this._onDocumentMouseMove = null;
+    this._onDocumentMouseUp = null;
+    this._onDocumentKeyDown = null;
   }
 
   /**
@@ -112,29 +116,42 @@ export class BaseFloatingWindow {
       resizeHandle.addEventListener('mousedown', (e) => this.startResizing(e));
     }
 
-    // Global mouse move and up listeners
-    document.addEventListener('mousemove', (e) => {
-      if (this.isDragging) {
-        this.drag(e);
-      } else if (this.isResizing) {
-        this.resize(e);
-      }
-    });
+    // Global listeners are attached once per instance and removed in destroy().
+    if (!this._onDocumentMouseMove) {
+      this._onDocumentMouseMove = (e) => {
+        if (!this.window) return;
+        if (this.isDragging) {
+          this.drag(e);
+        } else if (this.isResizing) {
+          this.resize(e);
+        }
+      };
+    }
+    if (!this._onDocumentMouseUp) {
+      this._onDocumentMouseUp = () => {
+        if (!this.window) return;
+        if (this.isDragging) {
+          this.stopDragging();
+        } else if (this.isResizing) {
+          this.stopResizing();
+        }
+      };
+    }
+    if (!this._onDocumentKeyDown) {
+      this._onDocumentKeyDown = (e) => {
+        if (!this.window) return;
+        if (e.key === 'Escape' && this.window.style.display !== 'none') {
+          this.hide();
+        }
+      };
+    }
 
-    document.addEventListener('mouseup', () => {
-      if (this.isDragging) {
-        this.stopDragging();
-      } else if (this.isResizing) {
-        this.stopResizing();
-      }
-    });
-
-    // Close on Escape key
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.window.style.display !== 'none') {
-        this.hide();
-      }
-    });
+    if (!this._documentListenersAttached) {
+      document.addEventListener('mousemove', this._onDocumentMouseMove);
+      document.addEventListener('mouseup', this._onDocumentMouseUp);
+      document.addEventListener('keydown', this._onDocumentKeyDown);
+      this._documentListenersAttached = true;
+    }
   }
 
   startDragging(e) {
@@ -291,6 +308,13 @@ export class BaseFloatingWindow {
    * Completely destroy the window and remove from DOM
    */
   destroy() {
+    if (this._documentListenersAttached) {
+      document.removeEventListener('mousemove', this._onDocumentMouseMove);
+      document.removeEventListener('mouseup', this._onDocumentMouseUp);
+      document.removeEventListener('keydown', this._onDocumentKeyDown);
+      this._documentListenersAttached = false;
+    }
+
     if (this.window && this.window.parentNode) {
       logger.log(`[CS] Destroying window: ${this.windowId}`);
       this.window.parentNode.removeChild(this.window);

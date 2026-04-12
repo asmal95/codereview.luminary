@@ -55,17 +55,19 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
       <div class="codereview-window-body">
         <div class="codereview-content">
           <div class="codereview-header-info">
-            <div class="codereview-header-row">
-              <button type="button" id="review-stop-btn" class="codereview-rerun-btn" style="display: none;" title="Остановить генерацию">
-                Stop
-              </button>
-              <div id="rerun-btn" class="codereview-rerun-btn" style="display: none;">
-                run again
-              </div>
-            </div>
             <div class="codereview-status-row">
-              <span id="status-icon"></span>
-              <span id="pr-url" class="codereview-pr-url"></span>
+              <div class="codereview-status-main">
+                <span id="status-icon"></span>
+                <span id="pr-url" class="codereview-pr-url"></span>
+              </div>
+              <div class="codereview-status-actions">
+                <button type="button" id="review-stop-btn" class="codereview-rerun-btn" style="display: none;" title="Остановить генерацию">
+                  Stop
+                </button>
+                <div id="rerun-btn" class="codereview-rerun-btn" style="display: none;">
+                  run again
+                </div>
+              </div>
             </div>
           </div>
           <hr class="codereview-divider"/>
@@ -283,7 +285,10 @@ Do not respond yet. I will send the code changes in diff format next.`);
         patchPartArray.push('+++ ' + file.to);
       }
       if ('chunks' in file) {
-        patchPartArray.push(file.chunks.map(c => c.changes.map(t => t.content).join('\n')));
+        const fileChunks = file.chunks
+          .map((chunk) => chunk.changes.map((change) => change.content).join('\n'))
+          .join('\n');
+        patchPartArray.push(fileChunks);
       }
       patchPartArray.push('```');
 
