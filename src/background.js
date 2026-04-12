@@ -14,27 +14,25 @@ chrome.storage.onChanged.addListener((changes) => {
 
 logger.log('[BG] Background script loaded');
 
-/**
- * Visible streaming text from an OpenAI-style `delta`.
- * Thinking models may stream CoT into `reasoning` / `reasoning_content` / `thinking`
- * before (or instead of) `content`. Once non-empty `content` arrives, drop reasoning
- * so the UI does not mix the final review with an endless "Wait, …" trace.
- */
-function takeOpenAiStreamDelta(delta, state) {
-  if (!delta || typeof delta !== 'object') return '';
+/** @returns {number} number of port messages sent (0–2) */
+function emitOpenAiDeltaChannels(port, delta) {
+  if (!delta || typeof delta !== 'object') return 0;
+  let sent = 0;
   const content = typeof delta.content === 'string' ? delta.content : '';
   const reasoning =
     (typeof delta.reasoning_content === 'string' && delta.reasoning_content) ||
     (typeof delta.reasoning === 'string' && delta.reasoning) ||
     (typeof delta.thinking === 'string' && delta.thinking) ||
     '';
-
-  if (content.length > 0) {
-    state.sawNonEmptyContent = true;
-    return content;
+  if (reasoning) {
+    port.postMessage({ type: 'chunk', channel: 'reasoning', content: reasoning });
+    sent++;
   }
-  if (state.sawNonEmptyContent) return '';
-  return reasoning;
+  if (content) {
+    port.postMessage({ type: 'chunk', channel: 'content', content: content });
+    sent++;
+  }
+  return sent;
 }
 
 // Pending resolve callbacks waiting for contentScriptReady from a specific tab.
@@ -271,7 +269,6 @@ chrome.runtime.onConnect.addListener((port) => {
       let buffer = '';
       let chunkCount = 0;
       let rawLineCount = 0;
-      const streamDeltaState = { sawNonEmptyContent: false };
 
       while (true) {
         // Check abort signal before attempting next read (handles buffered-data race)
@@ -342,7 +339,6 @@ chrome.runtime.onConnect.addListener((port) => {
 
             try {
               const json = JSON.parse(data);
-              const content = takeOpenAiStreamDelta(json.choices?.[0]?.delta, streamDeltaState);
               const finishReason = json.choices?.[0]?.finish_reason;
 
               if (finishReason) {
@@ -350,15 +346,14 @@ chrome.runtime.onConnect.addListener((port) => {
                 logger.log('[BG] Full chunk data:', JSON.stringify(json, null, 2));
               }
 
-              if (content) {
-                chunkCount++;
-                port.postMessage({ type: 'chunk', content });
-
-                if (chunkCount === 1) {
-                  logger.log('[BG] First chunk sent, content length:', content.length);
+              const n = emitOpenAiDeltaChannels(port, json.choices?.[0]?.delta);
+              if (n > 0) {
+                chunkCount += n;
+                if (chunkCount === n) {
+                  logger.log('[BG] First delta(s) sent, parts:', n);
                 }
                 if (chunkCount % 50 === 0) {
-                  logger.log('[BG] Chunks sent:', chunkCount);
+                  logger.log('[BG] Chunk messages sent:', chunkCount);
                 }
               }
             } catch (e) {
@@ -368,24 +363,21 @@ chrome.runtime.onConnect.addListener((port) => {
             // Try plain JSON format (Ollama might send without "data: " prefix)
             try {
               const json = JSON.parse(line);
-              let content = takeOpenAiStreamDelta(json.choices?.[0]?.delta, streamDeltaState);
-              if (!content) {
+              let n = emitOpenAiDeltaChannels(port, json.choices?.[0]?.delta);
+              if (n === 0) {
                 const fallback = json.message?.content || json.response || '';
                 if (fallback) {
-                  streamDeltaState.sawNonEmptyContent = true;
-                  content = fallback;
+                  port.postMessage({ type: 'chunk', channel: 'content', content: fallback });
+                  n = 1;
                 }
               }
-
-              if (content) {
-                chunkCount++;
-                port.postMessage({ type: 'chunk', content });
-
-                if (chunkCount === 1) {
-                  logger.log('[BG] First chunk sent (plain JSON), content length:', content.length);
+              if (n > 0) {
+                chunkCount += n;
+                if (chunkCount === n) {
+                  logger.log('[BG] First delta(s) sent (plain JSON), parts:', n);
                 }
                 if (chunkCount % 50 === 0) {
-                  logger.log('[BG] Chunks sent:', chunkCount);
+                  logger.log('[BG] Chunk messages sent:', chunkCount);
                 }
               }
             } catch (e) {

@@ -8,7 +8,7 @@ export class ApiClient {
    * Call ChatGPT API with streaming support
    * @param {Object} config - API configuration (apiKey, baseUrl, model, apiTimeout)
    * @param {Array} messages - Array of message objects with role and content
-   * @param {Function} onChunk - Callback for each chunk (receives accumulated response)
+   * @param {Function} onChunk - Callback with `{ reasoning, content }` accumulated strings (content is the main reply).
    * @param {Function} onDone - Callback when done
    * @param {Function} onError - Callback on error
    * @param {Function} [onAbort] - Callback when user stops generation (receives accumulated text)
@@ -35,7 +35,8 @@ export class ApiClient {
     logger.log('[CS] Messages summary:', messages.map(m => ({ role: m.role, length: m.content.length })));
 
     const port = chrome.runtime.connect({ name: 'streaming-api' });
-    let fullResponse = '';
+    let fullReasoning = '';
+    let fullContent = '';
     let chunkCount = 0;
     let isCompleted = false;
     // Tracks that the user pressed Stop and we're waiting for background confirmation.
@@ -60,7 +61,8 @@ export class ApiClient {
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
-        const errorMsg = fullResponse || 'Error: Request timeout. The API took too long to respond.';
+        const errorMsg =
+          (fullContent || fullReasoning) || 'Error: Request timeout. The API took too long to respond.';
         if (onError) onError(errorMsg);
       }
     }, timeoutMs);
@@ -87,17 +89,26 @@ export class ApiClient {
         if (isAborting) return;
 
         chunkCount++;
-        fullResponse += msg.content;
-        if (onChunk) onChunk(fullResponse);
+        const channel = msg.channel === 'reasoning' ? 'reasoning' : 'content';
+        if (channel === 'reasoning') {
+          fullReasoning += msg.content;
+        } else {
+          fullContent += msg.content;
+        }
+        if (onChunk) onChunk({ reasoning: fullReasoning, content: fullContent });
 
         if (chunkCount === 1) {
           logger.log('[CS] First chunk received, streaming started');
         }
         if (chunkCount % 10 === 0) {
-          logger.log(`[CS] Received ${chunkCount} chunks, length: ${fullResponse.length}`);
+          logger.log(
+            `[CS] Received ${chunkCount} chunks, content length: ${fullContent.length}, reasoning: ${fullReasoning.length}`
+          );
         }
       } else if (msg.type === 'done') {
-        logger.log(`[CS] Stream completed, total chunks: ${chunkCount}, response length: ${fullResponse.length}`);
+        logger.log(
+          `[CS] Stream completed, total chunks: ${chunkCount}, content length: ${fullContent.length}, reasoning: ${fullReasoning.length}`
+        );
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
@@ -105,16 +116,16 @@ export class ApiClient {
         // Treat it as a user-requested abort so the UI reflects the Stop action.
         if (isAborting) {
           logger.log('[CS] done received while aborting — treating as aborted');
-          if (onAbort) onAbort(fullResponse);
+          if (onAbort) onAbort({ reasoning: fullReasoning, content: fullContent });
         } else {
           if (onDone) onDone();
         }
       } else if (msg.type === 'aborted') {
-        logger.log('[CS] Stream aborted by user, length:', fullResponse.length);
+        logger.log('[CS] Stream aborted by user, content length:', fullContent.length);
         isCompleted = true;
         clearTimeout(timeout);
         port.disconnect();
-        if (onAbort) onAbort(fullResponse);
+        if (onAbort) onAbort({ reasoning: fullReasoning, content: fullContent });
       } else if (msg.type === 'error') {
         logger.error('[CS] Stream error:', msg.error);
         isCompleted = true;
@@ -138,8 +149,9 @@ export class ApiClient {
         logger.warn('[CS] Port disconnected before completion!');
         clearTimeout(timeout);
 
-        const errorMsg = fullResponse
-          ? fullResponse + '\n\n[Warning: Connection lost, showing partial response]'
+        const partial = fullContent || fullReasoning;
+        const errorMsg = partial
+          ? partial + '\n\n[Warning: Connection lost, showing partial response]'
           : 'Error: Connection lost before receiving any data. Check background script console.';
 
         if (onError) onError(errorMsg);

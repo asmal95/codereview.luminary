@@ -134,6 +134,42 @@ export class FloatingReviewWindow extends BaseFloatingWindow {
     }
   }
 
+  prepareReviewStreamShell(resultDiv) {
+    resultDiv.innerHTML = `
+      <div class="codereview-review-stream is-streaming">
+        <details class="codereview-thinking-details" id="review-thinking-block" hidden>
+          <summary class="codereview-thinking-summary">
+            <span class="codereview-thinking-spinner" aria-hidden="true"></span>
+            <span class="codereview-thinking-label">Размышление модели</span>
+          </summary>
+          <div class="codereview-thinking-body" id="review-thinking"></div>
+        </details>
+        <div class="codereview-review-answer" id="review-answer"></div>
+      </div>`;
+  }
+
+  updateReviewStreamLayout(resultDiv, { reasoning, content }, warning) {
+    if (!resultDiv.querySelector('.codereview-review-stream')) {
+      this.prepareReviewStreamShell(resultDiv);
+    }
+    const details = resultDiv.querySelector('#review-thinking-block');
+    const thinking = resultDiv.querySelector('#review-thinking');
+    const answer = resultDiv.querySelector('#review-answer');
+    if (!thinking || !answer) return;
+
+    if (reasoning) {
+      details.hidden = false;
+      thinking.innerHTML = renderMarkdown(reasoning);
+    }
+    const tail = warning ? ` \n\n${warning}` : '';
+    answer.innerHTML = renderMarkdown(content + tail);
+  }
+
+  endReviewStreamLayout(resultDiv) {
+    const stream = resultDiv.querySelector('.codereview-review-stream');
+    if (stream) stream.classList.remove('is-streaming');
+  }
+
   setStatus(ongoing, failed = false, rerun = true) {
     const statusIcon = this.window.querySelector('#status-icon');
     const rerunBtn = this.window.querySelector('#rerun-btn');
@@ -270,18 +306,25 @@ Do not respond yet. I will send the code changes in diff format next.`);
 
     this._abortReviewStream = null;
     this.setReviewStopVisible(true);
+    this.prepareReviewStreamShell(resultDiv);
 
     const { abort } = ApiClient.streamRequest(
       config,
       apiMessages,
-      (answer) => {
-        logger.log('[CS] Review answer length:', answer.length);
-        resultDiv.innerHTML = renderMarkdown(answer + ' \n\n' + warning);
+      (parts) => {
+        logger.log(
+          '[CS] Review stream — content length:',
+          parts.content.length,
+          'reasoning:',
+          parts.reasoning.length
+        );
+        this.updateReviewStreamLayout(resultDiv, parts, warning);
       },
       () => {
         logger.log('[CS] Review completed, final length:', resultDiv.textContent.length);
         this._abortReviewStream = null;
         this.setReviewStopVisible(false);
+        this.endReviewStreamLayout(resultDiv);
         chrome.storage.session.set({ [diffPath]: resultDiv.innerHTML })
           .catch(() => chrome.runtime.sendMessage({
             action: 'setCache',
@@ -302,11 +345,14 @@ Do not respond yet. I will send the code changes in diff format next.`);
       (partial) => {
         this._abortReviewStream = null;
         this.setReviewStopVisible(false);
-        const text = partial && partial.trim() ? partial : '';
-        if (text) {
-          resultDiv.innerHTML =
-            renderMarkdown(text + ' \n\n' + warning) +
-            '<p><em>Генерация остановлена.</em></p>';
+        const content = typeof partial === 'string' ? partial : (partial?.content || '');
+        const reasoning = typeof partial === 'object' && partial?.reasoning ? partial.reasoning : '';
+        if (content.trim() || reasoning) {
+          const body = content.trim()
+            ? `${content}\n\n*Генерация остановлена.*`
+            : '*Генерация остановлена.*';
+          this.updateReviewStreamLayout(resultDiv, { reasoning, content: body }, warning);
+          this.endReviewStreamLayout(resultDiv);
         } else {
           resultDiv.innerHTML = '<p><em>Генерация остановлена.</em></p>';
         }

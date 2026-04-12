@@ -172,6 +172,41 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
     }
   }
 
+  prepareExplainStreamShell(assistantElement) {
+    assistantElement.innerHTML = `
+      <div class="codereview-explain-assistant-stream codereview-review-stream is-streaming">
+        <details class="codereview-thinking-details codereview-explain-thinking-details" hidden>
+          <summary class="codereview-thinking-summary">
+            <span class="codereview-thinking-spinner" aria-hidden="true"></span>
+            <span class="codereview-thinking-label">Размышление</span>
+          </summary>
+          <div class="codereview-thinking-body codereview-explain-thinking-body"></div>
+        </details>
+        <div class="codereview-review-answer codereview-explain-answer"></div>
+      </div>`;
+  }
+
+  updateExplainStreamLayout(assistantElement, { reasoning, content }) {
+    if (!assistantElement.querySelector('.codereview-explain-assistant-stream')) {
+      this.prepareExplainStreamShell(assistantElement);
+    }
+    const details = assistantElement.querySelector('.codereview-explain-thinking-details');
+    const thinking = assistantElement.querySelector('.codereview-explain-thinking-body');
+    const answer = assistantElement.querySelector('.codereview-explain-answer');
+    if (!details || !thinking || !answer) return;
+
+    if (reasoning) {
+      details.hidden = false;
+      thinking.innerHTML = renderMarkdown(reasoning);
+    }
+    answer.innerHTML = renderMarkdown(content);
+  }
+
+  endExplainStreamLayout(assistantElement) {
+    const stream = assistantElement.querySelector('.codereview-explain-assistant-stream');
+    if (stream) stream.classList.remove('is-streaming');
+  }
+
   // Toggle context panel collapsed state
   toggleContext() {
     const contextSection = this.window?.querySelector('#context-section');
@@ -395,6 +430,7 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
 
     if (messagesContainer) {
       assistantElement = this.renderMessage('assistant', '', true);
+      this.prepareExplainStreamShell(assistantElement);
       messagesContainer.appendChild(assistantElement);
       this.scrollToBottom();
     }
@@ -412,13 +448,15 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
       const { abort } = ApiClient.streamRequest(
         config,
         apiMessages,
-        // onChunk - receives full accumulated response, not just the new chunk
-        (accumulatedResponse) => {
+        // onChunk — `{ reasoning, content }`; UI: collapsible reasoning + main reply.
+        (parts) => {
           if (currentRequestId !== this.streamRequestId) return;
           if (!this.window || !assistantElement) return;
 
-          fullResponse = accumulatedResponse;  // Just assign, don't concatenate!
-          assistantElement.innerHTML = renderMarkdown(fullResponse);
+          const reasoning = typeof parts === 'string' ? '' : (parts?.reasoning || '');
+          const text = typeof parts === 'string' ? parts : (parts?.content || '');
+          fullResponse = text;
+          this.updateExplainStreamLayout(assistantElement, { reasoning, content: text });
           this.scrollToBottom();
         },
         // onDone
@@ -429,11 +467,11 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
           this.state = 'COMPLETED';
           this._abortExplainStream = null;
 
-          // Add assistant message to history
+          // Add assistant message to history (main reply only)
           this.messages.push({ role: 'assistant', content: fullResponse });
 
-          // Remove streaming class
           if (assistantElement) {
+            this.endExplainStreamLayout(assistantElement);
             assistantElement.classList.remove('streaming');
           }
 
@@ -474,16 +512,24 @@ export class FloatingExplainWindow extends BaseFloatingWindow {
 
           this.state = 'COMPLETED';
           this._abortExplainStream = null;
-          const saved =
+          const savedRaw =
             partial !== undefined && partial !== null ? partial : fullResponse;
+          const saved =
+            typeof savedRaw === 'string' ? savedRaw : (savedRaw?.content || '');
+          const reasoning =
+            typeof savedRaw === 'object' && savedRaw?.reasoning ? savedRaw.reasoning : '';
 
           if (assistantElement) {
             assistantElement.classList.remove('streaming');
-            if (saved.trim()) {
-              this.messages.push({ role: 'assistant', content: saved });
-              assistantElement.innerHTML = renderMarkdown(
-                saved + '\n\n*Генерация остановлена.*'
-              );
+            if (saved.trim() || reasoning) {
+              const body = saved.trim()
+                ? `${saved}\n\n*Генерация остановлена.*`
+                : '*Генерация остановлена.*';
+              this.updateExplainStreamLayout(assistantElement, { reasoning, content: body });
+              this.endExplainStreamLayout(assistantElement);
+              if (saved.trim()) {
+                this.messages.push({ role: 'assistant', content: saved });
+              }
             } else {
               assistantElement.remove();
             }
